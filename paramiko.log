@@ -1,0 +1,1 @@
+[SSH debug] Paramiko DEBUG enabled. Calling connect() next. If the connection times out and no further lines appear below, the hang is in socket.connect() before Paramiko logs.

@@ -18,7 +18,7 @@ Tests can be configured via environment variables:
 
 - `JETSON_HOST`: Hostname or IP address of the Jetson device name
 - `JETSON_USERNAME`: SSH username
-- `JETSON_PASSWORD`: SSH password
+- `JETSON_PASSWORD`: SSH password, OR `JETSON_KEY_PATH` : SSH key path e.g. ~/.ssh/id_rsa (use when auth is key-based)
 - `JETSON_PORT`: SSH port (default: 22)
 
 ## Running Tests
