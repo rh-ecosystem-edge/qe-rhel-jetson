@@ -1,7 +1,8 @@
-# qe-rhel-jetson
-Repository for QE Jetson effort, includes automation of python tests and deploying Beaker machine
+# Jetson RPM Tests
 
-## Jetson Structure
+This directory contains pytest-based tests for Jetson RPMs using SSH connections via paramiko.
+
+## Real Jetson Structure
 ┌─────────────────────────────────────────┐
 │         Jetson SoC (System on Chip)     │
 ├─────────────────────────────────────────┤
@@ -41,10 +42,25 @@ Repository for QE Jetson effort, includes automation of python tests and deployi
 │                                         │
 └─────────────────────────────────────────┘
 
-## Installation
+## Reposetory Tests Structure
 
-```bash
-pip install -r requirements.txt
+```
+infra-tests/            # SSH infrastructure
+├── ssh_client.py       # SSHConnection class using paramiko
+└── __init__.py
+
+tests/
+├── conftest.py         # Shared pytest fixtures (Import ssh_client.py and set Variables)
+├── cuda/               # CUDA tests
+├── dla/                # DLA tests
+├── pva/                # PVA tests
+├── video_enc_dec/      # Video Encoder/Decoder tests
+├── usbs/               # USB tests
+├── pcis/               # PCI tests
+├── can_bus/            # CAN bus tests
+├── csi_camera/         # CSI camera tests
+├── display/            # Display tests
+└── ethernet/           # Ethernet tests
 ```
 
 ## Configuration
@@ -69,3 +85,25 @@ pytest tests/cuda/
 pytest tests/dla/
 pytest tests/pva/
 ```
+
+Run only critical tests:
+```bash
+pytest -m critical tests/
+```
+
+Run with verbose output:
+```bash
+pytest -v tests/
+```
+
+## Requirements
+
+Install required dependencies:
+```bash
+pip install pytest paramiko
+```
+
+## Test Markers
+
+- `@pytest.mark.critical`: Critical tests that must pass
+- `@pytest.mark.xfail`: Tests that are expected to fail on certain hardware
