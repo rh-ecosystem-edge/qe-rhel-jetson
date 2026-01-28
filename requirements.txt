@@ -1,8 +1,2 @@
 pytest>=7.0.0
 paramiko>=3.0.0
-
-# Beaker integration
-pybeaker
-
-# With Kerberos support
-pybeaker[kerberos]

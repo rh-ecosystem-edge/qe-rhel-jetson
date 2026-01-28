@@ -15,19 +15,29 @@ logger = logging.getLogger(__name__)
 class SSHConnection:
     """Simple SSH wrapper that mimics FabricAdapter interface for compatibility with existing tests."""
 
-    def __init__(self, hostname: str, username: str, password: str, port: int = 22, timeout: int = 30):
+    def __init__(
+        self,
+        hostname: str,
+        username: str,
+        password: Optional[str],
+        port: int = 22,
+        timeout: int = 30,
+        key_filename: Optional[str] = None,
+    ):
         """
         Initialize SSH connection.
 
         Args:
             hostname: Hostname or IP address of the Jetson device
             username: SSH username
-            password: SSH password
+            password: SSH password (optional when using key_filename; used as key passphrase if key is encrypted)
             port: SSH port (default: 22)
+            timeout: Connection timeout in seconds
+            key_filename: Path to private key file (e.g. ~/.ssh/id_rsa). Use this when auth is key-based.
         """
         logger.info(
-            "[SSH debug] Connecting: host=%s port=%s user=%s timeout=%ss",
-            hostname, port, username, timeout,
+            "[SSH debug] Connecting: host=%s port=%s user=%s timeout=%ss key=%s",
+            hostname, port, username, timeout, key_filename or "password",
         )
         # Step 1: quick TCP check (fails here if host unreachable or you need ProxyJump)
         try:
@@ -40,18 +50,24 @@ class SSHConnection:
             raise
         # Step 2: Paramiko SSH connect (retry on timeout - lab links can be flaky)
         last_error = None
+        connect_kw: dict = {
+            "hostname": hostname,
+            "port": port,
+            "username": username,
+            "timeout": timeout,
+        }
+        if key_filename:
+            connect_kw["key_filename"] = key_filename
+            connect_kw["password"] = password  # passphrase for encrypted key, or None
+        else:
+            connect_kw["password"] = password
+
         for attempt in range(1, 4):  # up to 3 attempts
             self.client = paramiko.SSHClient()
             self.client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
             try:
                 logger.info("[SSH debug] Step 2: Paramiko connect (attempt %s/3) ...", attempt)
-                self.client.connect(
-                    hostname,
-                    port=port,
-                    username=username,
-                    password=password,
-                    timeout=timeout,
-                )
+                self.client.connect(**connect_kw)
                 logger.info("[SSH debug] Step 2: Paramiko connect OK")
                 last_error = None
                 break
