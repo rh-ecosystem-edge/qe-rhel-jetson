@@ -1,0 +1,19 @@
+# Byte-compiled / cached
+__pycache__/
+
+# Pytest
+.pytest_cache/
+
+# Virtual env
+venv/
+.venv/
+env/
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Logs (runtime)
+*.log
