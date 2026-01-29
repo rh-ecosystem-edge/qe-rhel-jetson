@@ -1,6 +1,7 @@
 """
 Shared pytest configuration and fixtures for all tests.
-This file imports SSHConnection from infra-tests/ssh_client.py.
+This file imports SSHConnection from infra-tests/ssh_client.py and
+collects hardware info from infra-tests/hardware_info.py for use in all tests.
 """
 import pytest
 import os
@@ -8,6 +9,7 @@ from pathlib import Path
 import sys
 import importlib.util
 import logging
+from typing import Optional, Union
 # Add project root to path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
@@ -19,6 +21,13 @@ spec = importlib.util.spec_from_file_location("ssh_client", ssh_client_path)
 ssh_client_module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(ssh_client_module)
 SSHConnection = ssh_client_module.SSHConnection
+
+# Import hardware_info collect function from infra-tests
+hardware_info_path = project_root / "infra-tests" / "hardware_info.py"
+spec_hw = importlib.util.spec_from_file_location("hardware_info", hardware_info_path)
+hardware_info_module = importlib.util.module_from_spec(spec_hw)
+spec_hw.loader.exec_module(hardware_info_module)
+collect_hardware_info = hardware_info_module.collect
 
 # Configure logging
 logging.basicConfig(
@@ -57,6 +66,70 @@ if missing_vars:
     )
     logger.error(error_msg)
     raise ValueError(error_msg)
+
+# ---------------------------------------------------------------------------
+# Hardware info variables (set by hardware_info_session fixture; use in tests)
+# All are None by default if value not found.
+# ---------------------------------------------------------------------------
+RHEL_VERSION: Optional[str] = None
+JETPACK_VERSION: Optional[Union[float, str]] = None  # str if X.Y.Z, float if X.Y
+FIRMWARE_VERSION: Optional[Union[float, str]] = None  # str if X.Y.Z, float if X.Y
+FIRMWARE_TYPE: Optional[str] = None
+HARDWARE_MODEL_NAME: Optional[str] = None
+KERNEL_VERSION: Optional[str] = None
+CPU_ARCH: Optional[str] = None
+BOOTC_AVAILABLE: bool = False
+BOOTC_VERSION: Optional[Union[float, str]] = None  # str if X.Y.Z, float if X.Y
+BOOTC_IMAGE_URL: Optional[str] = None
+
+
+@pytest.fixture(scope="session", autouse=True)
+def hardware_info_session():
+    """
+    Collect hardware and system info from the Jetson via SSH at session start.
+    Sets module-level variables and prints SETUP summary for each pytest run.
+    """
+    key_path = os.path.expanduser(JETSON_KEY_PATH) if JETSON_KEY_PATH else None
+    with SSHConnection(
+        JETSON_HOST,
+        JETSON_USERNAME,
+        JETSON_PASSWORD or None,
+        JETSON_PORT,
+        JETSON_TIMEOUT,
+        key_filename=key_path,
+    ) as ssh:
+        info = collect_hardware_info(ssh)
+
+    # Set module-level variables so all tests can import them
+    global RHEL_VERSION, JETPACK_VERSION, FIRMWARE_VERSION, FIRMWARE_TYPE
+    global HARDWARE_MODEL_NAME, KERNEL_VERSION, CPU_ARCH
+    global BOOTC_AVAILABLE, BOOTC_VERSION, BOOTC_IMAGE_URL
+    RHEL_VERSION = info.get("rhel_version")
+    JETPACK_VERSION = info.get("jetpack_version")
+    FIRMWARE_VERSION = info.get("firmware_version")
+    FIRMWARE_TYPE = info.get("firmware_type")
+    HARDWARE_MODEL_NAME = info.get("hardware_model_name")
+    KERNEL_VERSION = info.get("kernel_version")
+    CPU_ARCH = info.get("cpu_arch")
+    BOOTC_AVAILABLE = info.get("bootc_available", False)
+    BOOTC_VERSION = info.get("bootc_version")
+    BOOTC_IMAGE_URL = info.get("bootc_image_url")
+
+    # Print SETUP summary for each pytest run (values may be None if not found)
+    fw_ver = f" {FIRMWARE_VERSION}" if FIRMWARE_VERSION is not None else ""
+    print("\n" + "=" * 60)
+    print("SETUP")
+    print("=" * 60)
+    print(f"1. RHEL version:          {RHEL_VERSION}")
+    print(f"2. Jetpack Version:       {JETPACK_VERSION}")
+    print(f"3. Firmware type/version: {FIRMWARE_TYPE}{fw_ver}")
+    print(f"4. Hardware model name:   {HARDWARE_MODEL_NAME}")
+    print(f"5. Bootc available:       {BOOTC_AVAILABLE}")
+    print(f"6. Bootc version:         {BOOTC_VERSION}")
+    print(f"7. Bootc image URL:       {BOOTC_IMAGE_URL}")
+    print("=" * 60 + "\n")
+    yield
+
 
 @pytest.fixture(scope="class")
 def ssh():
