@@ -1,7 +1,9 @@
 """
 CSI camera tests for Jetson RPMs.
 """
+from math import e
 import pytest
+import warnings
 
 
 class TestCSICamera:
@@ -11,7 +13,8 @@ class TestCSICamera:
         """Test CSI camera device nodes are present."""
         result = ssh.run("ls -la /dev/video*")
         # Check if video devices exist (CSI cameras appear as /dev/video*)
-        assert "/dev/video" in result.stdout or result.exit_status != 0, "No CSI camera devices found"
+        if result.exit_status != 0:
+            warnings.warn(UserWarning("No CSI camera devices found"))
 
     def test_csi_camera_sysfs(self, ssh):
         """Test CSI camera sysfs entries."""

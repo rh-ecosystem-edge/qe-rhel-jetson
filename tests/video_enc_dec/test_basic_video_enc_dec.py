@@ -12,5 +12,6 @@ class TestVideoEncDec:
         """Test hardware video acceleration with GStreamer."""
         result = ssh.sudo(
             "gst-launch-1.0 videotestsrc num-buffers=300 ! nvvidconv ! nvv4l2h264enc ! nvv4l2decoder ! fakesink"
+            #TODO: In case of Nano Super Developer Kit, needs to find way to run this command without encoding
         )
         assert result.exit_status == 0, f"Video acceleration test failed: {result.stderr}"

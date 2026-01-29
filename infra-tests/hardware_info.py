@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 def _run(ssh, command: str, timeout: Optional[int] = 30) -> str:
     """Run command via SSH and return stripped stdout, or empty string on failure."""
     try:
-        result = ssh.run(command, timeout=timeout)
+        result = ssh.run(command, timeout=timeout, print_output=False)
         return (result.stdout or "").strip() if result.exit_status == 0 else ""
     except Exception as e:
         logger.debug("Command %r failed: %s", command, e)
@@ -21,7 +21,7 @@ def _run(ssh, command: str, timeout: Optional[int] = 30) -> str:
 def _run_sudo(ssh, command: str, timeout: Optional[int] = 30) -> str:
     """Run command with sudo via SSH and return stripped stdout, or empty string on failure."""
     try:
-        result = ssh.run(f"sudo {command}", timeout=timeout)
+        result = ssh.run(f"sudo {command}", timeout=timeout, print_output=False)
         return (result.stdout or "").strip() if result.exit_status == 0 else ""
     except Exception as e:
         logger.debug("Command sudo %r failed: %s", command, e)
@@ -76,6 +76,7 @@ def collect(ssh) -> dict[str, Any]:
         - bootc_available: bool (default False if not found)
         - bootc_version: float | str | None (str if X.Y.Z, float if X.Y)
         - bootc_image_url: str | None
+        - bootc_image_version: str | None
     """
     out: dict[str, Any] = {
         "rhel_version": None,
@@ -88,6 +89,7 @@ def collect(ssh) -> dict[str, Any]:
         "bootc_available": False,
         "bootc_version": None,
         "bootc_image_url": None,
+        "bootc_image_version": None,
     }
 
     # 1. RHEL version
@@ -170,8 +172,12 @@ def collect(ssh) -> dict[str, Any]:
             out["bootc_version"] = _parse_decimal(ver_out)
         status_out = _run(ssh, "rpm-ostree status 2>/dev/null")
         if status_out:
+            # Try to extract image version (e.g. line with Version: or similar)
+            img_ver_match = re.search(r"(?:Version)\s*[:\s]+\s*(\S+.*?)(?:\s*$|\n)", status_out, re.MULTILINE | re.IGNORECASE)
             # Try to extract image URL (e.g. line with Image: or similar)
             img_match = re.search(r"(?:Image|ostree)\s*[:\s]+\s*(\S+.*?)(?:\s*$|\n)", status_out, re.MULTILINE | re.IGNORECASE)
+            if img_ver_match:
+                out["bootc_image_version"] = img_ver_match.group(1).strip() if img_ver_match.group(1).strip() else None
             if img_match:
                 out["bootc_image_url"] = img_match.group(1).strip()
             # Alternative: first URL-like string

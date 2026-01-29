@@ -6,6 +6,7 @@ import pytest
 import os
 from datetime import datetime
 from pathlib import Path
+from tests import conftest as _conftest
 
 FILE = Path(os.path.realpath(__file__)).parent
 
@@ -16,6 +17,8 @@ class TestDLA:
     @pytest.mark.critical
     def test_dla(self, ssh):
         """Test DLA with TensorRT in a container."""
+        if "Nano" in _conftest.HARDWARE_MODEL_NAME:
+            pytest.skip("DLA is not supported on Jetson Orin Nano")
         tmp = ssh.run("mktemp -d").stdout.strip()
         ssh.put(FILE / "Dockerfile", f"{tmp}/Dockerfile")
         result = ssh.sudo(

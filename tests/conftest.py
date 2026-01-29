@@ -80,6 +80,7 @@ KERNEL_VERSION: Optional[str] = None
 CPU_ARCH: Optional[str] = None
 BOOTC_AVAILABLE: bool = False
 BOOTC_VERSION: Optional[Union[float, str]] = None  # str if X.Y.Z, float if X.Y
+BOOTC_IMAGE_VERSION: Optional[Union[str]] = None
 BOOTC_IMAGE_URL: Optional[str] = None
 
 
@@ -103,7 +104,7 @@ def hardware_info_session():
     # Set module-level variables so all tests can import them
     global RHEL_VERSION, JETPACK_VERSION, FIRMWARE_VERSION, FIRMWARE_TYPE
     global HARDWARE_MODEL_NAME, KERNEL_VERSION, CPU_ARCH
-    global BOOTC_AVAILABLE, BOOTC_VERSION, BOOTC_IMAGE_URL
+    global BOOTC_AVAILABLE, BOOTC_VERSION, BOOTC_IMAGE_URL, BOOTC_IMAGE_VERSION
     RHEL_VERSION = info.get("rhel_version")
     JETPACK_VERSION = info.get("jetpack_version")
     FIRMWARE_VERSION = info.get("firmware_version")
@@ -113,6 +114,7 @@ def hardware_info_session():
     CPU_ARCH = info.get("cpu_arch")
     BOOTC_AVAILABLE = info.get("bootc_available", False)
     BOOTC_VERSION = info.get("bootc_version")
+    BOOTC_IMAGE_VERSION = info.get("bootc_image_version")
     BOOTC_IMAGE_URL = info.get("bootc_image_url")
 
     # Print SETUP summary for each pytest run (values may be None if not found)
@@ -125,8 +127,9 @@ def hardware_info_session():
     print(f"3. Firmware type/version: {FIRMWARE_TYPE}{fw_ver}")
     print(f"4. Hardware model name:   {HARDWARE_MODEL_NAME}")
     print(f"5. Bootc available:       {BOOTC_AVAILABLE}")
-    print(f"6. Bootc version:         {BOOTC_VERSION}")
-    print(f"7. Bootc image URL:       {BOOTC_IMAGE_URL}")
+    print(f"6. Bootc image version:   {BOOTC_IMAGE_VERSION}")
+    print(f"7. Bootc version:         {BOOTC_VERSION}")
+    print(f"8. Bootc image URL:       {BOOTC_IMAGE_URL}")
     print("=" * 60 + "\n")
     yield
 

@@ -92,7 +92,7 @@ class SSHConnection:
             self.client.close()
             raise
     
-    def run(self, command: str, timeout: Optional[int] = None):
+    def run(self, command: str, timeout: Optional[int] = None, print_output: bool = True):
         """
         Run a command and return result with stdout attribute.
         
@@ -103,6 +103,8 @@ class SSHConnection:
         Returns:
             Result object with stdout and exit_status attributes
         """
+        if print_output:
+            print("\t\tRunning command:", command)
         stdin, stdout, stderr = self.client.exec_command(command, timeout=timeout)
         exit_status = stdout.channel.recv_exit_status()
         output = stdout.read().decode('utf-8')
@@ -115,9 +117,11 @@ class SSHConnection:
             'exit_status': exit_status,
             'ok': exit_status == 0
         })()
+        if print_output:
+            print("\t\tstdout:", result.stdout)
         return result
     
-    def sudo(self, command: str, timeout: Optional[int] = None, fail_on_rc: bool = True, expect_rc: Optional[int] = 0):
+    def sudo(self, command: str, timeout: Optional[int] = None, fail_on_rc: bool = True, expect_rc: Optional[int] = 0, print_output: bool = True):
         """
         Run a command with sudo.
         
@@ -129,8 +133,7 @@ class SSHConnection:
         Returns:
             Result object with stdout and exit_status attributes
         """
-        
-        result = self.run(f"sudo {command}", timeout=timeout)
+        result = self.run(f"sudo {command}", timeout=timeout, print_output=print_output)
         if fail_on_rc and result.exit_status != expect_rc:
             raise RuntimeError(f"Command '{command}' failed with exit status {result.exit_status}. Expected {expect_rc}.")
         return result
