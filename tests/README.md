@@ -12,10 +12,11 @@ This directory contains pytest-based tests for Jetson RPMs using SSH connections
 ```
 infra-tests/            # SSH infrastructure
 ├── ssh_client.py       # SSHConnection class using paramiko
+├── hardware_info.py    # Collect hardware and system information from a Jetson device via SSH.
 └── __init__.py
 
 tests/
-├── conftest.py         # Shared pytest fixtures (Import ssh_client.py and set Variables)
+├── conftest.py         # Shared pytest fixtures (Import ssh_client.py, hardware_info collect function and set global variables)
 ├── cuda/               # CUDA tests
 ├── dla/                # DLA tests
 ├── pva/                # PVA tests
@@ -72,3 +73,37 @@ pip install pytest paramiko
 
 - `@pytest.mark.critical`: Critical tests that must pass
 - `@pytest.mark.xfail`: Tests that are expected to fail on certain hardware
+
+## How to Warn
+
+for more information look at tests/WARNING_BEHAVIOR.md
+
+## Hardware / System Variables (for developers)
+
+When running pytest, the session collects hardware and system info from the Jetson via SSH and exposes the following variables to all tests. **All variables default to `None` if the value is not found.** You can import them from `conftest` and use them to skip or adapt tests by RHEL version, Jetpack, firmware, bootc, RPMs, etc.
+
+| Variable | Type | Description |
+|----------|------|-------------|
+| `RHEL_VERSION` | str or None | RHEL version string (e.g. from `/etc/redhat-release`). |
+| `JETPACK_VERSION` | float, str, or None | Jetpack version: str if X.Y.Z (2 dots), float if X.Y (1 dot). |
+| `FIRMWARE_VERSION` | float, str, or None | Firmware version: str if X.Y.Z (2 dots), float if X.Y (1 dot). |
+| `FIRMWARE_TYPE` | str or None | Firmware type (e.g. `UEFI`, `BIOS`). |
+| `HARDWARE_MODEL_NAME` | str or None | Hardware model name. |
+| `KERNEL_VERSION` | str or None | Kernel version (e.g. `uname -r`). |
+| `CPU_ARCH` | str or None | CPU architecture (e.g. `aarch64`, `x86_64`). |
+| `BOOTC_AVAILABLE` | bool | Whether bootc / rpm-ostree is available (default False). |
+| `BOOTC_VERSION` | float, str, or None | Bootc/rpm-ostree version: str if X.Y.Z, float if X.Y (only if bootc is available). |
+| `BOOTC_IMAGE_URL` | str or None | Bootc image URL including tag (only if bootc is available). |
+
+**Example usage in a test:**
+
+```python
+from tests.conftest import RHEL_VERSION, JETPACK_VERSION, BOOTC_AVAILABLE, RPMS_AVAILABLE
+
+def test_something():
+    if not RPMS_AVAILABLE:
+        pytest.skip("nvidia-jetpack: need all 23 RPMs installed with same version")
+    # ...
+```
+
+At the start of each pytest run, a **SETUP** block is printed with: RHEL version, Jetpack version, firmware type and version, hardware model name, whether bootc is available, and whether the nvidia-jetpack RPM is available.
