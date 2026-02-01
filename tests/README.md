@@ -34,9 +34,9 @@ tests/
 
 ## Requirements
 
-Install required dependencies:
 ```bash
-pip install pytest paramiko
+pip install -r requirements.txt
+```nstall pytest paramiko
 ```
 
 ## Configuration
