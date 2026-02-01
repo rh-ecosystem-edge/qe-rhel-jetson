@@ -14,7 +14,7 @@ class TestCSICamera:
         result = ssh.run("ls -la /dev/video*")
         # Check if video devices exist (CSI cameras appear as /dev/video*)
         if result.exit_status != 0:
-            warnings.warn(UserWarning("No CSI camera devices found"))
+            warnings.warn(UserWarning("No CSI camera (/dev/video*) devices found"))
 
     def test_csi_camera_sysfs(self, ssh):
         """Test CSI camera sysfs entries."""

@@ -1,0 +1,76 @@
+# Jetson hardware expected values per test category.
+#
+# Keys are match strings: substrings to look for in HARDWARE_MODEL_NAME (from dmidecode
+# Product Name or devicetree model).
+#
+# Reference: https://www.nvidia.com/en-us/autonomous-machines/embedded-systems/jetson-orin/#:~:text=View%20Jetson%20Orin%20Technical%20Specifications
+
+# -----------------------------------------------------------------------------
+# Shared templates (anchors for merge; not used as match keys)
+# -----------------------------------------------------------------------------
+_templates:
+  nano: &nano_common
+    dla: { supported: false }
+    pva: { supported: false }
+    video_enc: { supported: false }
+    video_dec: { supported: true }
+  agx: &agx_common
+    dla: { supported: true }
+    pva: { supported: true }
+    can_bus: { supported: true }
+    video_enc: { supported: true }
+    video_dec: { supported: true }
+  orin_nx: &orin_nx_common
+    dla: { supported: true }
+    pva: { supported: true }
+    tools: { power_modes: ["10W", "15W", "25W", "40W"] }
+    can_bus: { supported: true }
+    video_enc: { supported: true }
+    video_dec: { supported: true }
+
+# -----------------------------------------------------------------------------
+# Hardware entries. Key = match string (substring of device Product Name).
+# -----------------------------------------------------------------------------
+"AGX Orin Developer Kit":
+  <<: *agx_common
+  tools: { power_modes: ["15W", "60W"] }
+
+"AGX Orin 64GB":
+  <<: *agx_common
+  tools: { power_modes: ["15W", "60W"] }
+
+"AGX Orin 32GB":
+  <<: *agx_common
+  tools: { power_modes: ["15W", "40W"] }
+
+"AGX Orin Industrial":
+  <<: *agx_common
+  tools: { power_modes: ["15W", "75W"] }
+
+"Orin NX 16GB":
+  <<: *orin_nx_common
+
+"Orin NX 8GB":
+  <<: *orin_nx_common
+
+"Orin Nano Developer Kit":
+  <<: *nano_common
+  tools: { power_modes: ["7W", "15W", "25W"] }
+  can_bus: { supported: false }
+
+"Orin Nano 8GB":
+  <<: *nano_common
+  tools: { power_modes: ["7W", "15W", "25W"] }
+  can_bus: { supported: true }
+
+"Orin Nano 4GB":
+  <<: *nano_common
+  tools: { power_modes: ["7W", "10W", "25W"] }
+  can_bus: { supported: true }
+
+
+
+
+
+
+

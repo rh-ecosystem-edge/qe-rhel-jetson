@@ -17,16 +17,19 @@ class TestDLA:
     @pytest.mark.critical
     def test_dla(self, ssh):
         """Test DLA with TensorRT in a container."""
-        if "Nano" in _conftest.HARDWARE_MODEL_NAME:
-            pytest.skip("DLA is not supported on Jetson Orin Nano")
+        spec = _conftest.get_hardware_spec(_conftest.HARDWARE_MODEL_NAME)
         tmp = ssh.run("mktemp -d").stdout.strip()
         ssh.put(FILE / "Dockerfile", f"{tmp}/Dockerfile")
         result = ssh.sudo(
             "podman build --build-arg CACHEBUST={} --device nvidia.com/gpu=all {}".format(
                 datetime.now().timestamp(), tmp
-            )
+            ), fail_on_rc=False
         )
-        assert (
-            "[V] [TRT] [DlaLayer]"
-            in result.stdout
-        ), f"DLA test failed - expected DlaLayer in output: {result.stderr}"
+        # check RC
+        if not spec.get("dla").get("supported"):
+          assert result.exit_status != 0, f"DLA test passed, but not supported (see jetson_hardware_specs.yaml)"
+        else:
+          assert result.exit_status == 0, f"DLA test failed, RC not 0: {result.stderr}"
+          # check output
+          assert ("[V] [TRT] [DlaLayer]" in result.stdout
+          ), f"DLA test failed - expected DlaLayer in output: {result.stderr}"

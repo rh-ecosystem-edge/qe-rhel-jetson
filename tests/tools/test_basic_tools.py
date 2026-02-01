@@ -3,6 +3,7 @@ Tools tests for Jetson RPMs.
 Covers nvidia-jetpack-tools: nvpmodel (power model) and nvfancontrol.
 """
 import pytest
+from tests import conftest as _conftest
 
 
 class TestTools:
@@ -10,11 +11,14 @@ class TestTools:
 
     def test_nvpmodel_query(self, ssh):
         """Test nvpmodel can report power model (nvidia-jetpack-tools)."""
+        spec = _conftest.get_hardware_spec(_conftest.HARDWARE_MODEL_NAME)
+        expected_modes = tuple(spec.get("tools").get("power_modes"))
         result = ssh.run("nvpmodel -q 2>/dev/null")
         assert result.exit_status == 0, f"nvpmodel -q failed: {result.stderr}"
         assert result.stdout.splitlines()[1].isdigit(), "nvpmodel -q produced no power model"
-        assert any(m in result.stdout for m in ("7W", "15W", "25W")), "This Power modes should not be supported"
-        # Expect some power-model related output
+        assert any(m in result.stdout for m in expected_modes), (
+            f"Expected one of power modes {expected_modes} in nvpmodel output"
+        )
         assert result.stdout.strip(), "nvpmodel produced no output"
 
     def test_nvfancontrol_available(self, ssh):

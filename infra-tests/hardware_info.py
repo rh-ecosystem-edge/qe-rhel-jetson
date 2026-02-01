@@ -66,7 +66,7 @@ def collect(ssh) -> dict[str, Any]:
 
     Returns:
         Dict with keys (all None if value not found):
-        - rhel_version: str | None
+        - rhel_version: float | None
         - jetpack_version: float | str | None (str if X.Y.Z, float if X.Y)
         - firmware_version: float | str | None (str if X.Y.Z, float if X.Y)
         - firmware_type: str | None (e.g. "UEFI", "BIOS")
@@ -94,7 +94,8 @@ def collect(ssh) -> dict[str, Any]:
 
     # 1. RHEL version
     rhel = _run(ssh, "cat /etc/redhat-release 2>/dev/null")
-    out["rhel_version"] = rhel if rhel else None
+    rhel_number = _parse_decimal(rhel)
+    out["rhel_version"] = rhel_number if rhel_number else None
 
     # 2. Jetpack version (from /etc/nv_tegra_release or similar on Jetson)
     # Target: 2-dot version X.Y.Z (e.g. R32 + REVISION: 7.1 -> "32.7.1"); stored as str since float cannot hold two dots.

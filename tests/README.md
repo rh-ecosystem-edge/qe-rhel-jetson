@@ -16,19 +16,27 @@ infra-tests/            # SSH infrastructure
 └── __init__.py
 
 tests/
-├── conftest.py         # Shared pytest fixtures (Import ssh_client.py, hardware_info collect function and set global variables)
-├── kmod/               # Kernel module (nvidia-jetpack-kmod)
-├── cuda/               # CUDA tests
-├── dla/                # DLA tests
-├── pva/                # PVA tests
-├── video_enc_dec/      # Video Encoder/Decoder tests
-├── usbs/               # USB tests
-├── pcis/               # PCI tests
-├── can_bus/            # CAN bus tests
-├── csi_camera/         # CSI camera tests
-├── display/            # Display tests (X11, DRM/GBM, Wayland)
-├── tools/              # nvidia-jetpack-tools tests (nvpmodel, nvfancontrol)
-└── ethernet/           # Ethernet tests
+├── conftest.py                 # Shared pytest fixtures (Import ssh_client.py, hardware_info collect function and set global variables)
+├── jetson_hardware_specs.yaml  # Jetson hardware expected values per test category
+├── kmod/                       # Kernel module (nvidia-jetpack-kmod)
+├── cuda/                       # CUDA tests
+├── dla/                        # DLA tests
+├── pva/                        # PVA tests
+├── video_enc_dec/              # Video Encoder/Decoder tests
+├── usbs/                       # USB tests
+├── pcis/                       # PCI tests
+├── can_bus/                    # CAN bus tests
+├── csi_camera/                 # CSI camera tests
+├── display/                    # Display tests (X11, DRM/GBM, Wayland)
+├── tools/                      # nvidia-jetpack-tools tests (nvpmodel, nvfancontrol)
+└── ethernet/                   # Ethernet tests
+```
+
+## Requirements
+
+Install required dependencies:
+```bash
+pip install pytest paramiko
 ```
 
 ## Configuration
@@ -64,21 +72,14 @@ Run with verbose output:
 pytest -v tests/
 ```
 
-## Requirements
+## How to Warn
 
-Install required dependencies:
-```bash
-pip install pytest paramiko
-```
+for more information look at tests/WARNING_BEHAVIOR.md
 
 ## Test Markers
 
 - `@pytest.mark.critical`: Critical tests that must pass
 - `@pytest.mark.xfail`: Tests that are expected to fail on certain hardware
-
-## How to Warn
-
-for more information look at tests/WARNING_BEHAVIOR.md
 
 ## Hardware / System Variables (for developers)
 

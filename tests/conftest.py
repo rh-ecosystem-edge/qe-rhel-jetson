@@ -9,7 +9,8 @@ from pathlib import Path
 import sys
 import importlib.util
 import logging
-from typing import Optional, Union
+from typing import Optional, Union, Dict, Any
+import yaml
 # Add project root to path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
@@ -54,16 +55,7 @@ if not JETSON_PASSWORD and not JETSON_KEY_PATH:
     missing_vars.append("JETSON_PASSWORD or JETSON_KEY_PATH")
 
 if missing_vars:
-    error_msg = (
-        f"Missing required environment variables: {', '.join(missing_vars)}\n"
-        f"Please export the following variables before running pytest:\n"
-        f"  export JETSON_HOST=<hostname_or_ip>\n"
-        f"  export JETSON_USERNAME=<username>\n"
-        f"  export JETSON_PASSWORD=<password>  # or use JETSON_KEY_PATH for key-based auth\n"
-        f"  export JETSON_KEY_PATH=~/.ssh/id_rsa  # optional; use same key as 'ssh' when auth is by key\n"
-        f"  export JETSON_PORT=<port>  # Optional, defaults to 22\n"
-        f"  export JETSON_TIMEOUT=<timeout>  # Optional, defaults to 60 seconds"
-    )
+    error_msg = (f"Missing required environment variables: {', '.join(missing_vars)}\n")
     logger.error(error_msg)
     raise ValueError(error_msg)
 
@@ -71,7 +63,7 @@ if missing_vars:
 # Hardware info variables (set by hardware_info_session fixture; use in tests)
 # All are None by default if value not found.
 # ---------------------------------------------------------------------------
-RHEL_VERSION: Optional[str] = None
+RHEL_VERSION: Optional[float] = None
 JETPACK_VERSION: Optional[Union[float, str]] = None  # str if X.Y.Z, float if X.Y
 FIRMWARE_VERSION: Optional[Union[float, str]] = None  # str if X.Y.Z, float if X.Y
 FIRMWARE_TYPE: Optional[str] = None
@@ -82,6 +74,29 @@ BOOTC_AVAILABLE: bool = False
 BOOTC_VERSION: Optional[Union[float, str]] = None  # str if X.Y.Z, float if X.Y
 BOOTC_IMAGE_VERSION: Optional[Union[str]] = None
 BOOTC_IMAGE_URL: Optional[str] = None
+
+def _load_hardware_specs() -> Dict[str, Any]:
+    """Load jetson_hardware_specs.yaml once."""
+    path = Path(__file__).parent / "jetson_hardware_specs.yaml"
+    with open(path) as f:
+        return yaml.safe_load(f)
+
+
+def get_hardware_spec(hardware_model_name: Optional[str]) -> Optional[Dict[str, Any]]:
+    """
+    Return the expected-spec dict for the given hardware model name, or None if unknown.
+    hardware_model_name comes from the device (dmidecode Product Name or devicetree model).
+    """
+    if not hardware_model_name:
+        return None
+    specs = _load_hardware_specs()
+    name_lower = hardware_model_name.lower()
+    for key in specs:
+        if key.lower() in name_lower:
+            spec = specs.get(key)
+            if spec and not str(key).startswith("_"):
+                return spec
+    return None
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -116,6 +131,13 @@ def hardware_info_session():
     BOOTC_VERSION = info.get("bootc_version")
     BOOTC_IMAGE_VERSION = info.get("bootc_image_version")
     BOOTC_IMAGE_URL = info.get("bootc_image_url")
+
+    # Skip entire session if hardware model is not in Testing Matrix (jetson_hardware_specs.yaml)
+    if get_hardware_spec(HARDWARE_MODEL_NAME) is None:
+        pytest.skip(
+            f"Hardware model not included in Testing Matrix: {HARDWARE_MODEL_NAME!r}. "
+            "Add the device to tests/jetson_hardware_specs.yaml to run tests."
+        )
 
     # Print SETUP summary for each pytest run (values may be None if not found)
     fw_ver = f" {FIRMWARE_VERSION}" if FIRMWARE_VERSION is not None else ""

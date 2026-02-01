@@ -92,7 +92,7 @@ class SSHConnection:
             self.client.close()
             raise
     
-    def run(self, command: str, timeout: Optional[int] = None, print_output: bool = True):
+    def run(self, command: str, timeout: Optional[int] = None, fail_on_rc: bool = True, print_output: bool = True):
         """
         Run a command and return result with stdout attribute.
         
