@@ -83,11 +83,6 @@ for more information look at tests/WARNING_BEHAVIOR.md
 ## Hardware / System Variables (for developers)
 
 When running pytest, the session collects hardware and system info from the Jetson via SSH and exposes the following variables to all tests. **All variables default to `None` if the value is not found.** You can import them from `conftest` and use them to skip or adapt tests by RHEL version, Jetpack, firmware, bootc, RPMs, etc.
-e.g add this import in the beggining
-```bash
-from tests import conftest as _conftest
-```
-and use it _conftest.HARDWARE_MODEL_NAME
 
 | Variable | Type | Description |
 |----------|------|-------------|
@@ -106,10 +101,10 @@ and use it _conftest.HARDWARE_MODEL_NAME
 **Example usage in a test:**
 
 ```python
-from tests.conftest import RHEL_VERSION, JETPACK_VERSION, BOOTC_AVAILABLE, RPMS_AVAILABLE
+from tests import conftest as _conftest
 
 def test_something():
-    if not RPMS_AVAILABLE:
+    if not _conftest.RPMS_AVAILABLE:
         pytest.skip("nvidia-jetpack: need all 23 RPMs installed with same version")
     # ...
 ```
