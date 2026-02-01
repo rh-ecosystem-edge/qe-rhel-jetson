@@ -27,6 +27,10 @@ _templates:
     can_bus: { supported: true }
     video_enc: { supported: true }
     video_dec: { supported: true }
+    pcis: {
+      "PCIe Gen4 x4": {capable_speed: 16, lanes: 4, logical_slots: 1 }, # 16GT/s = Gen 4.
+      "PCIe Gen4 x1": {capable_speed: 16, lanes: 1, logical_slots: 3 }, # 16GT/s = Gen 4.
+    }
 
 # -----------------------------------------------------------------------------
 # Hardware entries. Key = match string (substring of device Product Name).
@@ -34,18 +38,38 @@ _templates:
 "AGX Orin Developer Kit":
   <<: *agx_common
   tools: { power_modes: ["15W", "60W"] }
+  pcis: {
+    "PCIe slot": {capable_speed: 16, lanes: 4, logical_slots: 1 }, # 16GT/s = Gen 4.
+    "M.2 Key M slot x4": {capable_speed: 16, lanes: 4, logical_slots: 1 }, # 16GT/s = Gen 4.
+    "M.2 Key E slot x1": {capable_speed: 16, lanes: 1, logical_slots: 1 }  # 16GT/s = Gen 4.
+  }
 
 "AGX Orin 64GB":
   <<: *agx_common
   tools: { power_modes: ["15W", "60W"] }
+  pcis: {
+    "PCIe Gen4 x8": {capable_speed: 16, lanes: 8, logical_slots: 1 }, # 16GT/s = Gen 4. # In spec sheet says "Up to 2 x8"
+    "PCIe Gen4 x4": {capable_speed: 16, lanes: 4, logical_slots: 1 }, # 16GT/s = Gen 4.
+    "PCIe Gen4 x1": {capable_speed: 16, lanes: 1, logical_slots: 2 }  # 16GT/s = Gen 4.
+  }
 
 "AGX Orin 32GB":
   <<: *agx_common
   tools: { power_modes: ["15W", "40W"] }
+  pcis: {
+    "PCIe Gen4 x8": {capable_speed: 16, lanes: 8, logical_slots: 1 }, # 16GT/s = Gen 4. # In spec sheet says "Up to 2 x8"
+    "PCIe Gen4 x4": {capable_speed: 16, lanes: 4, logical_slots: 1 }, # 16GT/s = Gen 4.
+    "PCIe Gen4 x1": {capable_speed: 16, lanes: 1, logical_slots: 2 }  # 16GT/s = Gen 4.
+  }
 
 "AGX Orin Industrial":
   <<: *agx_common
   tools: { power_modes: ["15W", "75W"] }
+  pcis: {
+    "PCIe Gen4 x8": {capable_speed: 16, lanes: 8, logical_slots: 1 }, # 16GT/s = Gen 4. # In spec sheet says "Up to 2 x8"
+    "PCIe Gen4 x4": {capable_speed: 16, lanes: 4, logical_slots: 1 }, # 16GT/s = Gen 4.
+    "PCIe Gen4 x1": {capable_speed: 16, lanes: 1, logical_slots: 2 }  # 16GT/s = Gen 4.
+  }
 
 "Orin NX 16GB":
   <<: *orin_nx_common
@@ -57,19 +81,29 @@ _templates:
   <<: *nano_common
   tools: { power_modes: ["7W", "15W", "25W"] }
   can_bus: { supported: false }
+  pcis: {
+    "M.2 Key M slot x4": {capable_speed: 8, lanes: 4, logical_slots: 1 }, # 8GT/s = Gen 3.
+    "M.2 Key M slot x2": {capable_speed: 8, lanes: 2, logical_slots: 1 }, # 8GT/s = Gen 3.
+    "M.2 Key E slot x1": {capable_speed: 8, lanes: 1, logical_slots: 1 }  # 8GT/s = Gen 3.
+  }
 
 "Orin Nano 8GB":
   <<: *nano_common
   tools: { power_modes: ["7W", "15W", "25W"] }
   can_bus: { supported: true }
+  pcis: {
+    "PCIe Gen3 x4": {capable_speed: 8, lanes: 4, logical_slots: 1 }, # 8GT/s = Gen 3.
+    "PCIe Gen3 x1": {capable_speed: 8, lanes: 1, logical_slots: 3 }, # 8GT/s = Gen 3.
+  }
 
 "Orin Nano 4GB":
   <<: *nano_common
   tools: { power_modes: ["7W", "10W", "25W"] }
   can_bus: { supported: true }
-
-
-
+  pcis: {
+    "PCIe Gen3 x4": {capable_speed: 8, lanes: 4, logical_slots: 1 }, # 8GT/s = Gen 3.
+    "PCIe Gen3 x1": {capable_speed: 8, lanes: 1, logical_slots: 3 }, # 8GT/s = Gen 3.
+  }
 
 
 

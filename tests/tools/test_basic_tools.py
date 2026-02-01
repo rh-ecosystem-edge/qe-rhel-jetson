@@ -15,7 +15,9 @@ class TestTools:
         expected_modes = tuple(spec.get("tools").get("power_modes"))
         result = ssh.run("nvpmodel -q 2>/dev/null")
         assert result.exit_status == 0, f"nvpmodel -q failed: {result.stderr}"
+        # Check if the power model is a number in the second line of the output
         assert result.stdout.splitlines()[1].isdigit(), "nvpmodel -q produced no power model"
+        # Check if the power model is in the expected modes (according jetson_hardware_specs.yaml)
         assert any(m in result.stdout for m in expected_modes), (
             f"Expected one of power modes {expected_modes} in nvpmodel output"
         )

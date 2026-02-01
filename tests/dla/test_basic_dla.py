@@ -30,6 +30,6 @@ class TestDLA:
           assert result.exit_status != 0, f"DLA test passed, but not supported (see jetson_hardware_specs.yaml)"
         else:
           assert result.exit_status == 0, f"DLA test failed, RC not 0: {result.stderr}"
-          # check output
+          # check output if DLA is supported
           assert ("[V] [TRT] [DlaLayer]" in result.stdout
           ), f"DLA test failed - expected DlaLayer in output: {result.stderr}"
