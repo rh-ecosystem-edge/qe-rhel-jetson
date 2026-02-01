@@ -36,7 +36,6 @@ tests/
 
 ```bash
 pip install -r requirements.txt
-```nstall pytest paramiko
 ```
 
 ## Configuration
