@@ -21,3 +21,8 @@ class TestCSICamera:
         result = ssh.run("ls -1 /sys/class/video4linux/")
         # At least check that video4linux class exists
         assert result.exit_status == 0, f"Failed to access video4linux sysfs: {result.stderr}"
+
+    def test_camera_driver_loaded(self, ssh):
+        """Test camera driver is loaded."""
+        result = ssh.run("lsmod  | grep camera")
+        assert result.exit_status == 0, f"Failed to check camera driver: {result.stderr}"
