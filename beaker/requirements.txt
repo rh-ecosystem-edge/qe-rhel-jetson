@@ -1,0 +1,13 @@
+# Core dependencies
+requests>=2.28.0
+
+# Kerberos authentication (required for Red Hat Beaker)
+requests-kerberos>=0.14.0
+gssapi>=1.8.0
+
+# For password-based authentication (alternative to Kerberos)
+requests-gssapi>=1.2.0
+
+# Ansible for bootc deployment
+ansible>=2.14.0
+
