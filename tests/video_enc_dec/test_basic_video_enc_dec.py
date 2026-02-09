@@ -14,6 +14,7 @@ class TestVideoEncDec:
         spec = _conftest.get_hardware_spec(_conftest.HARDWARE_MODEL_NAME)
         if not spec.get("video_enc").get("supported"):
           warnings.warn(UserWarning("Only Video Decoder is supported on this hardware (see jetson_hardware_specs.yaml), running test with Video Decoder only"))
+          # TODO: add repo RHEL 9.7 AppStream and epel-cisco-openh264
           ssh.sudo("dnf install gstreamer1-plugin-openh264 -y") # for openh264enc CPU encoding
           ssh.sudo("dnf install gstreamer1-plugins-good gstreamer1-plugins-bad-free -y") # for h264parse
           result = ssh.sudo(

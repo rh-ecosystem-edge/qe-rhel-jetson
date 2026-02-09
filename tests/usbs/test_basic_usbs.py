@@ -14,6 +14,7 @@ class TestUSBs:
         assert result.exit_status == 0, f"Failed to list USB devices: {result.stderr}"
         assert len(result.stdout.splitlines()) > 0, "No USB devices found"
 
+    # TODO: add USB specification test
     #def test_usb_spec(self, ssh):
     #    """Test USB specification."""
     #    spec = _conftest.get_hardware_spec(_conftest.HARDWARE_MODEL_NAME)
