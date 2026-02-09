@@ -75,12 +75,17 @@ BOOTC_VERSION: Optional[Union[float, str]] = None  # str if X.Y.Z, float if X.Y
 BOOTC_IMAGE_VERSION: Optional[Union[str]] = None
 BOOTC_IMAGE_URL: Optional[str] = None
 
+key_path = os.path.expanduser(JETSON_KEY_PATH) if JETSON_KEY_PATH else None
+
+# ---------------------------------------------------------------------------
+# Functions
+# --------------------------------------------------------------------------- 
+
 def _load_hardware_specs() -> Dict[str, Any]:
     """Load jetson_hardware_specs.yaml once."""
     path = Path(__file__).parent / "jetson_hardware_specs.yaml"
     with open(path) as f:
         return yaml.safe_load(f)
-
 
 def get_hardware_spec(hardware_model_name: Optional[str]) -> Optional[Dict[str, Any]]:
     """
@@ -98,14 +103,37 @@ def get_hardware_spec(hardware_model_name: Optional[str]) -> Optional[Dict[str, 
                 return spec
     return None
 
+def install_beaker_repo(ssh, rhel_version: Optional[float]):
+    """
+    Install Beaker repository on the Jetson.
+    RHEL version is required to install the correct Beaker repository.
+    """
+    logger.info("Checking Beaker reposetories exist on the Jetson...")
+    if rhel_version is None:
+        raise ValueError("RHEL version not found, The environment is not a RHEL machine")
+
+    main_rhel_version = str(rhel_version).split(".")[0]
+    result = ssh.sudo("dnf repolist | grep beaker- | wc -l")
+    if result.exit_status == 0 and int(result.stdout.strip()) >= 12:
+        logger.info("installing EPEL release for RHEL %s", rhel_version)
+        ssh.sudo(f"dnf install https://dl.fedoraproject.org/pub/epel/epel-release-latest-{main_rhel_version}.noarch.rpm -y --transient")
+    else:
+      logger.info("installing Beaker repositories and EPEL release for RHEL %s", rhel_version)
+      ssh.sudo(f"dnf config-manager --add-repo http://download.eng.rdu.redhat.com/released/rhel-{main_rhel_version}/RHEL-{main_rhel_version}/{rhel_version}.0/AppStream/aarch64/os/ --transient")
+      ssh.sudo(f"dnf config-manager --add-repo http://download.eng.rdu.redhat.com/released/rhel-{main_rhel_version}/RHEL-{main_rhel_version}/{rhel_version}.0/BaseOS/aarch64/os/ --transient")
+      ssh.sudo(f"dnf install https://dl.fedoraproject.org/pub/epel/epel-release-latest-{main_rhel_version}.noarch.rpm -y --transient")
+
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
 
 @pytest.fixture(scope="session", autouse=True)
 def hardware_info_session():
     """
     Collect hardware and system info from the Jetson via SSH at session start.
     Sets module-level variables and prints SETUP summary for each pytest run.
+    Also installs Beaker repository on the Jetson.
     """
-    key_path = os.path.expanduser(JETSON_KEY_PATH) if JETSON_KEY_PATH else None
     with SSHConnection(
         JETSON_HOST,
         JETSON_USERNAME,
@@ -155,6 +183,15 @@ def hardware_info_session():
     print("=" * 60 + "\n")
     yield
 
+    with SSHConnection(
+        JETSON_HOST,
+        JETSON_USERNAME,
+        JETSON_PASSWORD or None,
+        JETSON_PORT,
+        JETSON_TIMEOUT,
+        key_filename=key_path,
+    ) as ssh:
+        install_beaker_repo(ssh, RHEL_VERSION)
 
 @pytest.fixture(scope="class")
 def ssh():
