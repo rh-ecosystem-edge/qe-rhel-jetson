@@ -26,8 +26,12 @@ _templates:
     video_enc: { supported: true }
     video_dec: { supported: true }
     pcis: {
-      "PCIe Gen4 x4": {capable_speed: 16, lanes: 4, logical_slots: 1 }, # 16GT/s = Gen 4.
-      "PCIe Gen4 x1": {capable_speed: 16, lanes: 1, logical_slots: 3 }, # 16GT/s = Gen 4.
+      "PCIe Gen4 x4": {capable_speed: "16GT/s", lanes: 4, logical_slots: 1 }, # 16GT/s = Gen 4.
+      "PCIe Gen4 x1": {capable_speed: "16GT/s", lanes: 1, logical_slots: 3 }, # 16GT/s = Gen 4.
+    }
+    usbs: {
+      "USB 3.2 Gen2": {capable_speed: "10000M", ports: 3 }, # 10000M = USB3.2 Gen2
+      "USB 2.0": {capable_speed: "480M", ports: 3 }, # 480M = USB2.0
     }
 
 # -----------------------------------------------------------------------------
@@ -38,36 +42,54 @@ _templates:
   # Power modes can be any value in range (min/max Watts), not only discrete 15W/60W.
   tools: { power_modes: { min: 15, max: 60 } }
   pcis: {
-    "PCIe slot x16": {capable_speed: 16, lanes: 8, logical_slots: 1 }, # 16GT/s = Gen 4.
-    "M.2 Key M slot x4": {capable_speed: 16, lanes: 4, logical_slots: 1 }, # 16GT/s = Gen 4.
-    "M.2 Key E slot x1": {capable_speed: 16, lanes: 1, logical_slots: 1 }  # 16GT/s = Gen 4.
+    "PCIe slot x16": {capable_speed: "16GT/s", lanes: 8, logical_slots: 1 }, # 16GT/s = Gen 4.
+    "M.2 Key M slot x4": {capable_speed: "16GT/s", lanes: 4, logical_slots: 1 }, # 16GT/s = Gen 4.
+    "M.2 Key E slot x1": {capable_speed: "16GT/s", lanes: 1, logical_slots: 1 }  # 16GT/s = Gen 4.
+  }
+  usbs: {
+    "USB Type-C connector": {capable_speed: "10000M", ports: 2 }, # 10000M = USB3.2 Gen2
+    "USB Type-A connector Gen2": {capable_speed: "10000M", ports: 2 }, # 10000M = USB3.2 Gen2
+    "USB Type-A connector Gen1": {capable_speed: "5000M", ports: 2 }, # 5000M = USB3.2 Gen1
+    "USB Micro-B connector": {capable_speed: "480M", ports: 1 }, # 480M = USB2.0
   }
 
 "AGX Orin 64GB":
   <<: *agx_common
   tools: { power_modes: { min: 15, max: 60 } }
   pcis: {
-    "PCIe Gen4 x8": {capable_speed: 16, lanes: 8, logical_slots: 1 }, # 16GT/s = Gen 4. # In spec sheet says "Up to 2 x8"
-    "PCIe Gen4 x4": {capable_speed: 16, lanes: 4, logical_slots: 1 }, # 16GT/s = Gen 4.
-    "PCIe Gen4 x1": {capable_speed: 16, lanes: 1, logical_slots: 2 }  # 16GT/s = Gen 4.
+    "PCIe Gen4 x8": {capable_speed: "16GT/s", lanes: 8, logical_slots: 1 }, # 16GT/s = Gen 4. # In spec sheet says "Up to 2 x8"
+    "PCIe Gen4 x4": {capable_speed: "16GT/s", lanes: 4, logical_slots: 1 }, # 16GT/s = Gen 4.
+    "PCIe Gen4 x1": {capable_speed: "16GT/s", lanes: 1, logical_slots: 2 }  # 16GT/s = Gen 4.
+  }
+  usbs: {
+    "USB 3.2 Gen2": {capable_speed: "10000M", ports: 3 }, # 10000M = USB3.2 Gen2
+    "USB 2.0": {capable_speed: "480M", ports: 4 }, # 480M = USB2.0
   }
 
 "AGX Orin 32GB":
   <<: *agx_common
   tools: { power_modes: { min: 15, max: 40 } }
   pcis: {
-    "PCIe Gen4 x8": {capable_speed: 16, lanes: 8, logical_slots: 1 }, # 16GT/s = Gen 4. # In spec sheet says "Up to 2 x8"
-    "PCIe Gen4 x4": {capable_speed: 16, lanes: 4, logical_slots: 1 }, # 16GT/s = Gen 4.
-    "PCIe Gen4 x1": {capable_speed: 16, lanes: 1, logical_slots: 2 }  # 16GT/s = Gen 4.
+    "PCIe Gen4 x8": {capable_speed: "16GT/s", lanes: 8, logical_slots: 1 }, # 16GT/s = Gen 4. # In spec sheet says "Up to 2 x8"
+    "PCIe Gen4 x4": {capable_speed: "16GT/s", lanes: 4, logical_slots: 1 }, # 16GT/s = Gen 4.
+    "PCIe Gen4 x1": {capable_speed: "16GT/s", lanes: 1, logical_slots: 2 }  # 16GT/s = Gen 4.
+  }
+  usbs: {
+    "USB 3.2 Gen2": {capable_speed: "10000M", ports: 3 }, # 10000M = USB3.2 Gen2
+    "USB 2.0": {capable_speed: "480M", ports: 4 }, # 480M = USB2.0
   }
 
 "AGX Orin Industrial":
   <<: *agx_common
   tools: { power_modes: { min: 15, max: 75 } }
   pcis: {
-    "PCIe Gen4 x8": {capable_speed: 16, lanes: 8, logical_slots: 1 }, # 16GT/s = Gen 4. # In spec sheet says "Up to 2 x8"
-    "PCIe Gen4 x4": {capable_speed: 16, lanes: 4, logical_slots: 1 }, # 16GT/s = Gen 4.
-    "PCIe Gen4 x1": {capable_speed: 16, lanes: 1, logical_slots: 2 }  # 16GT/s = Gen 4.
+    "PCIe Gen4 x8": {capable_speed: "16GT/s", lanes: 8, logical_slots: 1 }, # 16GT/s = Gen 4. # In spec sheet says "Up to 2 x8"
+    "PCIe Gen4 x4": {capable_speed: "16GT/s", lanes: 4, logical_slots: 1 }, # 16GT/s = Gen 4.
+    "PCIe Gen4 x1": {capable_speed: "16GT/s", lanes: 1, logical_slots: 2 }  # 16GT/s = Gen 4.
+  }
+  usbs: {
+    "USB 3.2 Gen2": {capable_speed: "10000M", ports: 3 }, # 10000M = USB3.2 Gen2
+    "USB 2.0": {capable_speed: "480M", ports: 4 }, # 480M = USB2.0
   }
 
 "Orin NX 16GB":
@@ -80,25 +102,37 @@ _templates:
   <<: *nano_common
   tools: { power_modes: ["7W", "15W"] }
   pcis: {
-    "M.2 Key M slot x4": {capable_speed: 8, lanes: 4, logical_slots: 1 }, # 8GT/s = Gen 3.
-    "M.2 Key M slot x2": {capable_speed: 8, lanes: 2, logical_slots: 1 }, # 8GT/s = Gen 3.
-    "M.2 Key E slot x1": {capable_speed: 8, lanes: 1, logical_slots: 1 }  # 8GT/s = Gen 3.
+    "M.2 Key M slot x4": {capable_speed: "8GT/s", lanes: 4, logical_slots: 1 }, # 8GT/s = Gen 3.
+    "M.2 Key M slot x2": {capable_speed: "8GT/s", lanes: 2, logical_slots: 1 }, # 8GT/s = Gen 3.
+    "M.2 Key E slot x1": {capable_speed: "8GT/s", lanes: 1, logical_slots: 1 }  # 8GT/s = Gen 3.
+  }
+  usbs: {
+    "USB Type-A Connector": {capable_speed: "10000M", ports: 4 }, # 10000M = USB3.2 Gen2
+    "USB Type-C Connector for UFP": {capable_speed: "480M", ports: 4 }, # expected USB2.0 for UFP role
   }
 
 "Orin Nano 8GB":
   <<: *nano_common
   tools: { power_modes: ["7W", "15W", "25W"] }
   pcis: {
-    "PCIe Gen3 x4": {capable_speed: 8, lanes: 4, logical_slots: 1 }, # 8GT/s = Gen 3.
-    "PCIe Gen3 x1": {capable_speed: 8, lanes: 1, logical_slots: 3 }, # 8GT/s = Gen 3.
+    "PCIe Gen3 x4": {capable_speed: "8GT/s", lanes: 4, logical_slots: 1 }, # 8GT/s = Gen 3.
+    "PCIe Gen3 x1": {capable_speed: "8GT/s", lanes: 1, logical_slots: 3 }, # 8GT/s = Gen 3.
+  }
+  usbs: {
+    "USB 3.2 Gen2": {capable_speed: "10000M", ports: 3 }, # 10000M = USB3.2 Gen2
+    "USB 2.0": {capable_speed: "480M", ports: 3 }, # 480M = USB2.0
   }
 
 "Orin Nano 4GB":
   <<: *nano_common
   tools: { power_modes: ["7W", "10W", "25W"] }
   pcis: {
-    "PCIe Gen3 x4": {capable_speed: 8, lanes: 4, logical_slots: 1 }, # 8GT/s = Gen 3.
-    "PCIe Gen3 x1": {capable_speed: 8, lanes: 1, logical_slots: 3 }, # 8GT/s = Gen 3.
+    "PCIe Gen3 x4": {capable_speed: "8GT/s", lanes: 4, logical_slots: 1 }, # 8GT/s = Gen 3.
+    "PCIe Gen3 x1": {capable_speed: "8GT/s", lanes: 1, logical_slots: 3 }, # 8GT/s = Gen 3.
+  }
+  usbs: {
+    "USB 3.2 Gen2": {capable_speed: "10000M", ports: 3 }, # 10000M = USB3.2 Gen2
+    "USB 2.0": {capable_speed: "480M", ports: 3 }, # 480M = USB2.0
   }
 
 
