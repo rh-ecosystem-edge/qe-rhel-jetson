@@ -48,8 +48,7 @@ export BEAKER_AUTH_METHOD="password"
 export BEAKER_USERNAME="your_username"
 export BEAKER_PASSWORD="your_password"
 export BEAKER_SSL_VERIFY="false"
-
-python scripts/reserve_jetson.py
+export JETSON_HOST="nvidia-jetson-agx-orin-05.khw.eng.bos2.dc.redhat.com"
 ```
 
 ### Option 2: Kerberos (Recommended for local development)
@@ -59,11 +58,10 @@ export BEAKER_HUB_URL="https://beaker.engineering.redhat.com"
 export BEAKER_AUTH_METHOD="krbv"
 export BEAKER_KRB_REALM="IPA.REDHAT.COM"
 export BEAKER_SSL_VERIFY="false"
+export JETSON_HOST="nvidia-jetson-agx-orin-05.khw.eng.bos2.dc.redhat.com"
 
 # Get Kerberos ticket first
 kinit your-username@IPA.REDHAT.COM
-
-python scripts/reserve_jetson.py
 ```
 
 ## Quick Start
@@ -76,7 +74,7 @@ Choose your authentication method (see above).
 
 ```bash
 cd beaker
-python scripts/reserve_jetson.py --target nvidia-jetson-agx-orin-05.khw.eng.bos2.dc.redhat.com
+python scripts/reserve_jetson.py --target $JETSON_HOST
 ```
 
 ### 3. Set Up Ansible Vault (First Time Only)
@@ -93,7 +91,7 @@ ansible-vault create vars/secrets.yml
 
 ```bash
 cd ansible
-ansible-playbook -i inventory.yml install_bootc.yml --ask-vault-pass
+ansible-playbook -i inventory.yml install_bootc.yml --ask-vault-pass -e "${JETSON_HOST}"
 ```
 
 ### 5. Run Tests
