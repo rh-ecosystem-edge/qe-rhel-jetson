@@ -39,6 +39,7 @@ class TestCANBus:
         can_interface = ssh.sudo(r"ip -o link show type can | grep -v UP | grep -Po 'can\d+' | head -n 1").stdout.strip()
         if can_interface == "":
             warnings.warn("Not found CAN interface that is not UP, skipping loopback test") # for loopabck test we need a interface that is not in use
+            pytest.skip("Not found CAN interface that is not UP, skipping loopback test")
         original_interface_state = ssh.sudo(f"ip link show {can_interface} | grep -Po 'state \\w+' | cut -d ' ' -f 2").stdout.strip()
 
         ssh.sudo("dnf install can-utils -y --transient") # for candump and cansend cli tools
