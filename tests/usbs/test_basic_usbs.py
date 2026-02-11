@@ -24,7 +24,7 @@ class TestUSBs:
     def test_usb_spec(self, ssh):
         """
         Test USB specification.
-        Check if controllers with expected values are present.
+        Check if controllers with expected values (capable_speed and ports) are present.
         Check if the amount of controllers with the same spec values present as amount of lines in lsusb output.
         """
         spec = _conftest.get_hardware_spec(_conftest.HARDWARE_MODEL_NAME)

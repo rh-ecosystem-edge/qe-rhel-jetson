@@ -47,10 +47,8 @@ _templates:
     "M.2 Key E slot x1": {capable_speed: "16GT/s", lanes: 1, logical_slots: 1 }  # 16GT/s = Gen 4.
   }
   usbs: {
-    "USB Type-C connector": {capable_speed: "10000M", ports: 2 }, # 10000M = USB3.2 Gen2
-    "USB Type-A connector Gen2": {capable_speed: "10000M", ports: 2 }, # 10000M = USB3.2 Gen2
-    "USB Type-A connector Gen1": {capable_speed: "5000M", ports: 2 }, # 5000M = USB3.2 Gen1
-    "USB Micro-B connector": {capable_speed: "480M", ports: 1 }, # 480M = USB2.0
+    "USB Type-C/A connector Gen2/Gen1": {capable_speed: "10000M", ports: 4 }, # 10000M = USB3.2 Gen2, 5000M = USB3.2 Gen1, The controller hub has 4 ports with dynamic speed negotiation.
+    "USB Micro-B connector": {capable_speed: "480M", ports: 4 }, # 480M = USB2.0, The USB Micro-B is physically wired to one of these 4 ports
   }
 
 "AGX Orin 64GB":

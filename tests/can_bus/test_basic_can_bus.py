@@ -35,11 +35,12 @@ class TestCANBus:
         The loopback test is a simple way to test the CAN bus connection without the transceiver, 
         which test only the CAN controller (which is part of Jetson SoC).
         """
-        # get the first CAN interface
-        can_interface = ssh.sudo(r"ip -o link show type can | grep -Po 'can\d+' | head -n 1").stdout.strip()
+        # get the first CAN interface that is not UP
+        can_interface = ssh.sudo(r"ip -o link show type can | grep -v UP | grep -Po 'can\d+' | head -n 1").stdout.strip()
+        if can_interface == "":
+            warnings.warn("Not found CAN interface that is not UP, skipping loopback test") # for loopabck test we need a interface that is not in use
+            pytest.skip("Not found CAN interface that is not UP, skipping loopback test")
         original_interface_state = ssh.sudo(f"ip link show {can_interface} | grep -Po 'state \\w+' | cut -d ' ' -f 2").stdout.strip()
-        if original_interface_state == "UP":
-            warnings.warn("CAN interface is already up, skipping loopback test")
 
         ssh.sudo("dnf install can-utils -y --transient") # for candump and cansend cli tools
         # enable CAN driver 
@@ -61,8 +62,8 @@ class TestCANBus:
         ssh.sudo("pkill -f candump")
         ssh.sudo(f"rm -f {dump_log}")
         ssh.sudo("pkill -f cansend", fail_on_rc=False)
-        ssh.sudo(f"ip link set {can_interface} down")
-        result = wait_for_interface_state(ssh, can_interface, "DOWN")
-        assert "DOWN" in result.stdout, "CAN interface is not down"
+        ssh.sudo(f"ip link set {can_interface} {original_interface_state.lower()}") # set the interface to the original state
+        result = wait_for_interface_state(ssh, can_interface, original_interface_state.lower())
+        assert original_interface_state in result.stdout, f"CAN interface is not {original_interface_state}"
         ssh.sudo(f"ip link set {can_interface} type can bitrate 500000 loopback off")
         
