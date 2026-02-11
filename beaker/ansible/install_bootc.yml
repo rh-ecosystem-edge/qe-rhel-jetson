@@ -21,11 +21,8 @@
   become: true
   
   vars:
-    # Default values (can be overridden in inventory or command line)
-    bootc_image: "registry.gitlab.com/redhat/rhel/sst/orin-sidecar/nvidia-jetson-sidecar/rhel-9.7:523ef1e4"
-    registry_url: "registry.gitlab.com"
-    boot_label: "Red Hat Enterprise Linux bootc"
-    boot_restore_hours: 22
+    # Defaults for bootc_image, registry_url, boot_label, boot_restore_hours come from inventory.yml
+    # (override with -e e.g. -e "bootc_image_tag=...")
     auto_reboot: true
     setup_boot_restore: true
   
@@ -45,8 +42,8 @@
         msg: |
           Target: {{ inventory_hostname }} ({{ ansible_host }})
           Image:  {{ bootc_image }}
-          OS:     {{ ansible_distribution }} {{ ansible_distribution_version }}
-          Arch:   {{ ansible_architecture }}
+          OS:     {{ ansible_distribution | default('unknown') }} {{ ansible_distribution_version | default('') }}
+          Arch:   {{ ansible_architecture | default('unknown') }}
   
   tasks:
     #=========================================================================
@@ -87,7 +84,7 @@
     - name: Save boot order to local file
       ansible.builtin.copy:
         content: |
-          # Boot order saved at {{ ansible_date_time.iso8601 }}
+          # Boot order saved at {{ (ansible_date_time | default({'iso8601': 'unknown'})).iso8601 }}
           # Host: {{ inventory_hostname }}
           {{ efi_boot_info.stdout }}
         dest: "/root/original_boot_order.txt"
@@ -298,7 +295,7 @@
     - name: Display restoration info
       ansible.builtin.debug:
         msg: |
-          Boot restoration timer set for {{ boot_restore_hours }} hours
+          Boot restoration timer set for {{ boot_restore_hours }} hours (reservation {{ reservation_hours }}h, restore 2h before end)
           PXE-first order: {{ pxe_first_order }}
           Bootc entries to delete: {{ bootc_entries | join(', ') }}
       when: setup_boot_restore
@@ -346,7 +343,7 @@
           Kernel: {{ kernel_version.stdout }}
           Image:  {{ bootc_image }}
           
-          Boot restore: {{ boot_restore_hours }}h
+          Boot restore: {{ boot_restore_hours }}h (reservation {{ reservation_hours }}h)
           PXE entry:    Boot{{ pxe_entry }}
           ========================================
       tags: [verify]
