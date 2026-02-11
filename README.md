@@ -14,6 +14,9 @@ pip install -r requirements.txt
 
 ## Configuration
 
+! For step by step Integration with Beaker (for Jetson testing)
+Read qe-rhel-jetson/beaker/README.md
+
 Tests can be configured via environment variables:
 
 - `JETSON_HOST`: Hostname or IP address of the Jetson device name

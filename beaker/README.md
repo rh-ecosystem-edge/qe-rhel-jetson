@@ -49,6 +49,8 @@ export BEAKER_USERNAME="your_username"
 export BEAKER_PASSWORD="your_password"
 export BEAKER_SSL_VERIFY="false"
 export JETSON_HOST="nvidia-jetson-agx-orin-05.khw.eng.bos2.dc.redhat.com"
+export BOOTC_IMAGE_TAG="411ed591" #choose the tag from here https://gitlab.com/redhat/rhel/sst/orin-sidecar/nvidia-jetson-sidecar/container_registry/
+export RESERVATION_HOURS="99" #put between 3-99
 ```
 
 ### Option 2: Kerberos (Recommended for local development)
@@ -59,6 +61,8 @@ export BEAKER_AUTH_METHOD="krbv"
 export BEAKER_KRB_REALM="IPA.REDHAT.COM"
 export BEAKER_SSL_VERIFY="false"
 export JETSON_HOST="nvidia-jetson-agx-orin-05.khw.eng.bos2.dc.redhat.com"
+export BOOTC_IMAGE_TAG="411ed591" #choose the tag from here https://gitlab.com/redhat/rhel/sst/orin-sidecar/nvidia-jetson-sidecar/container_registry/
+export RESERVATION_HOURS="99" #put between 3-99
 
 # Get Kerberos ticket first
 kinit your-username@IPA.REDHAT.COM
@@ -74,7 +78,7 @@ Choose your authentication method (see above).
 
 ```bash
 cd beaker
-python scripts/reserve_jetson.py --target $JETSON_HOST
+python scripts/reserve_jetson.py --target $JETSON_HOST --hours $RESERVATION_HOURS
 ```
 
 ### 3. Set Up Ansible Vault (First Time Only)
@@ -82,16 +86,19 @@ python scripts/reserve_jetson.py --target $JETSON_HOST
 ```bash
 cd ansible
 ansible-vault create vars/secrets.yml
-# Enter:
+# Write:
 # registry_user: "Your Name"
-# registry_pass: "glpat-your-gitlab-token"
+# registry_pass: "glpat-your-personal-gitlab-token"
 ```
 
 ### 4. Deploy Bootc Image
 
+Run the following command for overriding the default target host, and image tag/hash 
+(base URL unchanged, from the gitlab nvidia-jetson-sidecar repo)
+
 ```bash
 cd ansible
-ansible-playbook -i inventory.yml install_bootc.yml --ask-vault-pass -e "${JETSON_HOST}"
+ansible-playbook -i inventory.yml install_bootc.yml --ask-vault-pass -e "target_host=${JETSON_HOST}" -e "bootc_image_tag=${BOOTC_IMAGE_TAG}" -e "reservation_hours=${RESERVATION_HOURS}"
 ```
 
 ### 5. Run Tests
