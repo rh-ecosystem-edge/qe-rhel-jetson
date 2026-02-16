@@ -37,7 +37,7 @@ from pybeaker import BeakerClient
 
 # Default values
 DEFAULT_TARGET = "nvidia-jetson-agx-orin-05.khw.eng.bos2.dc.redhat.com"
-DEFAULT_DISTRO = "RHEL-9.7.0-updates-20260126.2"
+DEFAULT_DISTRO = "RHEL-9.7.0"
 DEFAULT_HOURS = 24
 SSH_TIMEOUT_MINUTES = 30
 SSH_RETRY_INTERVAL = 30  # seconds
@@ -343,7 +343,7 @@ def main():
             print(f"   SSH accessible as root")
             print(f"\n📝 Next steps:")
             print(f"   Run Ansible playbook to install bootc:")
-            print(f"      cd ansible && ansible-playbook -i inventory.yml install_bootc.yml --ask-vault-pass")
+            print(f"      Read qe-rhel-jetson/beaker/README.md Quick Start section")
         else:
             print(f"\n❌ FAILED: Could not establish SSH connection to {args.target}")
             print(f"   after waiting {args.ssh_timeout} minutes.")

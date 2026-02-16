@@ -8,14 +8,18 @@
 #   ansible-playbook -i inventory.yml install_bootc.yml --ask-vault-pass \
 #     -e "target_host=nvidia-jetson-agx-orin-03.khw.eng.bos2.dc.redhat.com"
 #
-#   # Override only the image tag/hash (base URL unchanged, from the gitlab nvidia-jetson-sidecar repo):
+#   # Override only the image tag/hash:
 #   ansible-playbook -i inventory.yml install_bootc.yml --ask-vault-pass \
 #     -e "bootc_image_tag=523ef1e4"
 #
 #   # Override reservation length; boot order restores 2h before reservation ends:
 #   ansible-playbook -i inventory.yml install_bootc.yml --ask-vault-pass \
 #     -e "reservation_hours=24"
-#
+
+#  # Override bootc_image_base: 
+#   ansible-playbook -i inventory.yml install_bootc.yml --ask-vault-pass \
+#     -e "bootc_image_base=registry.gitlab.com/redhat/rhel/sst/orin-sidecar/nvidia-jetson-sidecar/rhel-9.7"
+
 all:
   hosts:
     jetson:

@@ -63,7 +63,7 @@ class TestCANBus:
         ssh.sudo(f"rm -f {dump_log}")
         ssh.sudo("pkill -f cansend", fail_on_rc=False)
         ssh.sudo(f"ip link set {can_interface} {original_interface_state.lower()}") # set the interface to the original state
-        result = wait_for_interface_state(ssh, can_interface, original_interface_state.lower())
+        result = wait_for_interface_state(ssh, can_interface, original_interface_state)
         assert original_interface_state in result.stdout, f"CAN interface is not {original_interface_state}"
         ssh.sudo(f"ip link set {can_interface} type can bitrate 500000 loopback off")
         

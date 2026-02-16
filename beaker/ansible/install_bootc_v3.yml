@@ -13,8 +13,9 @@
 # Dry run:
 #   ansible-playbook -i inventory.yml install_bootc.yml --check
 #
-# Based on: Installing bootc image on Jetson Beaker Machines - V2 (Google Doc).
-# https://docs.google.com/document/d/1dyfA2f4EQjRhe3CP-JKi8S3K54ILlBg0hXQFFEnlpao
+# Based on: Installing bootc image on Jetson Beaker Machines - V3 (Google Doc).
+# No manual EFI boot entry creation; bootc team fixed boot manager handling.
+# Link: https://docs.google.com/document/d/1dyfA2f4EQjRhe3CP-JKi8S3K54ILlBg0hXQFFEnlpao
 
 - name: Install bootc on Jetson systems
   hosts: all
@@ -97,7 +98,7 @@
     #=========================================================================
     - name: Login to container registry
       ansible.builtin.command:
-        cmd: podman login {{ registry_url }} -u "{{ registry_user }}" -p "{{ registry_pass }}"
+        cmd: podman login -u '{{ registry_user }}' -p '{{ registry_pass }}' {{ registry_url }}
       no_log: true  # Don't log credentials
       changed_when: true
       tags: [registry]
@@ -136,112 +137,16 @@
       tags: [install]
     
     #=========================================================================
-    # Step 6: Find EFI device
+    # Step 6: Set up boot restoration (restore original EFI order after timer)
+    # Note: bootc team fixed boot entry handling; no manual EFI entry creation.
     #=========================================================================
-    - name: Get EFI mount device
-      ansible.builtin.command: findmnt -n -o SOURCE /boot/efi
-      register: efi_mount
-      changed_when: false
-      tags: [efi]
-    
-    - name: Set EFI partition device
-      ansible.builtin.set_fact:
-        efi_partition: "{{ efi_mount.stdout | trim | basename }}"
-      tags: [efi]
-    
-    - name: Determine EFI disk from partition
-      ansible.builtin.set_fact:
-        efi_disk: "{{ efi_partition | regex_replace('p?\\d+$', '') }}"
-      tags: [efi]
-    
-    - name: Display EFI device info
-      ansible.builtin.debug:
-        msg: "EFI partition: {{ efi_partition }}, disk: /dev/{{ efi_disk }}"
-      tags: [efi]
-    
-    #=========================================================================
-    # Step 7: Create EFI boot entry on correct device (mmcblk0 for Jetson)
-    # Note: bootc install may create entries on nvme, but /boot/efi is on mmcblk0
-    #=========================================================================
-    - name: Check current EFI entries after bootc install
-      ansible.builtin.command: efibootmgr
-      register: current_efi
-      changed_when: false
-      tags: [efi]
-    
-    - name: Find any bootc entries (may be on wrong device)
-      ansible.builtin.set_fact:
-        existing_bootc_entries: "{{ current_efi.stdout | regex_findall('Boot([0-9A-Fa-f]{4})\\*.*bootc', ignorecase=True) }}"
-      tags: [efi]
-    
-    - name: Delete existing bootc entries (may point to wrong device)
-      ansible.builtin.command: "efibootmgr -b {{ item }} -B"
-      loop: "{{ existing_bootc_entries }}"
-      when: existing_bootc_entries | length > 0
-      failed_when: false
-      tags: [efi]
-    
-    - name: Create EFI boot entry on correct device ({{ efi_disk }})
-      ansible.builtin.command:
-        cmd: >
-          efibootmgr --create
-          --disk /dev/{{ efi_disk }}
-          --part 1
-          --label "{{ boot_label }}"
-          --loader "\EFI\redhat\shimaa64.efi"
-      register: efi_create
-      tags: [efi]
-    
-    - name: Get new EFI boot configuration
-      ansible.builtin.command: efibootmgr
-      register: new_efi_info
-      changed_when: false
-      tags: [efi]
-    
-    - name: Find the new bootc entry
-      ansible.builtin.set_fact:
-        bootc_entries: "{{ new_efi_info.stdout | regex_findall('Boot([0-9A-Fa-f]{4})\\*.*bootc', ignorecase=True) }}"
-      tags: [efi]
-    
-    - name: Display boot configuration
-      ansible.builtin.debug:
-        msg: |
-          EFI device: /dev/{{ efi_disk }} ({{ efi_partition }})
-          Bootc entry: {{ bootc_entries | join(', ') }}
-          Boot order will be set with PXE ({{ pxe_entry }}) first
-      tags: [efi]
-    
-    #=========================================================================
-    # Step 8: Set up boot restoration (PXE first)
-    #=========================================================================
-    - name: Calculate PXE-first boot order
-      ansible.builtin.set_fact:
-        pxe_first_order: "{{ ([pxe_entry] + (original_boot_order.split(',') | reject('in', bootc_entries) | reject('eq', pxe_entry) | list)) | join(',') }}"
-      when: setup_boot_restore
-      tags: [restore]
-    
     - name: Create boot restoration script
       ansible.builtin.copy:
         dest: /etc/ostree/restore_boot.sh
         mode: '0755'
         content: |
           #!/bin/bash
-          echo "Restoring original EFI boot order for Beaker..."
-          
-          # Delete bootc entries
-          {% for entry in bootc_entries %}
-          if efibootmgr | grep -q "Boot{{ entry }}"; then
-              echo "Deleting Boot{{ entry }}..."
-              efibootmgr -b {{ entry }} -B 2>/dev/null || true
-          fi
-          {% endfor %}
-          
-          # Set PXE first boot order
-          echo "Setting PXE-first boot order: {{ pxe_first_order }}"
-          efibootmgr -o {{ pxe_first_order }}
-          
-          echo "Boot order restored. Rebooting..."
-          reboot
+          efibootmgr -o "$1"
       when: setup_boot_restore
       tags: [restore]
     
@@ -251,11 +156,11 @@
         mode: '0644'
         content: |
           [Unit]
-          Description=Restore EFI Boot Order for Beaker
+          Description=Restore EFI Boot Order
           
           [Service]
           Type=oneshot
-          ExecStart=/etc/ostree/restore_boot.sh
+          ExecStart=/etc/ostree/restore_boot.sh {{ original_boot_order }}
           
           [Install]
           WantedBy=multi-user.target
@@ -268,7 +173,7 @@
         mode: '0644'
         content: |
           [Unit]
-          Description=Restore Boot Order Timer - Runs {{ boot_restore_hours }}h before reservation ends
+          Description=Run Restore EFI Boot Order in {{ boot_restore_hours }}h
           
           [Timer]
           OnActiveSec={{ boot_restore_hours }}h
@@ -293,17 +198,29 @@
       when: setup_boot_restore
       tags: [restore]
     
+    - name: Verify restore-bootorder timer
+      ansible.builtin.command: systemctl list-timers --all
+      register: timer_list
+      changed_when: false
+      when: setup_boot_restore
+      tags: [restore]
+    
+    - name: Display timer verification
+      ansible.builtin.debug:
+        msg: "{{ timer_list.stdout_lines | select('search', 'restore-bootorder') | list }}"
+      when: setup_boot_restore
+      tags: [restore]
+    
     - name: Display restoration info
       ansible.builtin.debug:
         msg: |
-          Boot restoration timer set for {{ boot_restore_hours }} hours (reservation {{ reservation_hours }}h, restore 2h before end)
-          PXE-first order: {{ pxe_first_order }}
-          Bootc entries to delete: {{ bootc_entries | join(', ') }}
+          Boot restoration timer set for {{ boot_restore_hours }}h (reservation {{ reservation_hours }}h minus 2h for safety)
+          Original boot order to restore: {{ original_boot_order }}
       when: setup_boot_restore
       tags: [restore]
     
     #=========================================================================
-    # Step 9: Reboot to new image
+    # Step 7: Reboot to new image
     #=========================================================================
     - name: Reboot to bootc image
       ansible.builtin.reboot:
@@ -313,7 +230,7 @@
       tags: [reboot]
     
     #=========================================================================
-    # Step 10: Verify deployment
+    # Step 8: Verify deployment
     #=========================================================================
     - name: Wait for system to be accessible
       ansible.builtin.wait_for_connection:
@@ -352,7 +269,7 @@
           Image:  {{ bootc_image }}
           
           Boot restore: {{ boot_restore_hours }}h (reservation {{ reservation_hours }}h)
-          PXE entry:    Boot{{ pxe_entry }}
+          Original boot order: {{ original_boot_order }}
           ========================================
       tags: [verify]
 

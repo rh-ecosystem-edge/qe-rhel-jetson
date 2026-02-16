@@ -43,16 +43,19 @@ class TestTools:
         # Check if the power model is a number in the second line of the output
         assert result.stdout.splitlines()[1].isdigit(), "nvpmodel -q produced no power model"
         # Check if the power model is in the allowed list or range
+        # MAXN is always a valid power mode (maximum performance, no wattage cap)
+        if "MAXN" in result.stdout:
+            return
         if kind == "list":
             expected_modes = tuple(power_modes_val)
             assert any(m in result.stdout for m in expected_modes), (
-                f"Expected one of power modes {expected_modes} in nvpmodel output"
+                f"Expected one of power modes {expected_modes} or MAXN in nvpmodel output"
             )
         else:
             min_w, max_w = power_modes_val["min"], power_modes_val["max"]
             wattages = _parse_wattage_from_stdout(result.stdout)
             assert wattages, (
-                f"Could not find any wattage value (e.g. 15W, 60W) in nvpmodel output for range check"
+                f"Could not find any wattage value (e.g. 15W, 60W) or MAXN in nvpmodel output for range check"
             )
             in_range = [w for w in wattages if min_w <= w <= max_w]
             assert in_range, (
