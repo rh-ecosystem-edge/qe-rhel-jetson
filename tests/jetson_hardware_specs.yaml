@@ -9,6 +9,11 @@
 # Shared templates (anchors for merge; not used as match keys)
 # -----------------------------------------------------------------------------
 _templates:
+  igx: &igx_common
+    dla: { supported: true }
+    pva: { supported: true }
+    video_enc: { supported: true }
+    video_dec: { supported: true }
   nano: &nano_common
     dla: { supported: false }
     pva: { supported: false }
@@ -37,6 +42,19 @@ _templates:
 # -----------------------------------------------------------------------------
 # Hardware entries. Key = match string (substring of device Product Name).
 # -----------------------------------------------------------------------------
+"IGX Orin Develop":
+  <<: *igx_common
+  # Power modes can be any value in range (min/max Watts), not only discrete 15W/60W.
+  tools: { power_modes: ["80W", "350W", "850W"] }
+  pcis: {
+    "x8 lanes within x16 physical connector": {capable_speed: "32GT/s", lanes: 8, logical_slots: 1 }, # 32GT/s = Gen5
+    "x16 lanes within x16 physical connector": {capable_speed: "32GT/s", lanes: 16, logical_slots: 8 }, # 32GT/s = Gen5
+  }
+  usbs: {
+    "1x USB 3.2 Gen2 Type-C connector": {capable_speed: "10000M", ports: 5 }, # 10000M = USB3.2 Gen2, 5 ports for the controller hub (1 for Type-C and 4 for Type-A)
+    "1x USB 3.2 Gen2 Type-A connector": {capable_speed: "10000M", ports: 5 }, # 5 ports for the controller hub (1 for Type-C and 4 for Type-A)
+  }
+
 "AGX Orin Developer Kit":
   <<: *agx_common
   # Power modes can be any value in range (min/max Watts), not only discrete 15W/60W.
