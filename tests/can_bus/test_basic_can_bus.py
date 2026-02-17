@@ -8,13 +8,17 @@ import warnings
 
 def wait_for_interface_state(ssh, interface_name, interface_state, timeout=10):
     """Wait for the interface to reach the desired state."""
-    while True or timeout > 0:
+    result = None
+    start_time = time.time()
+    while time.time() - start_time < timeout:
         result = ssh.sudo(f"ip link show {interface_name} | grep -Po 'state {interface_state}'", fail_on_rc=False)
         if interface_state in result.stdout:
-            break
+            return result
         time.sleep(1)
-        timeout -= 1
-    return result
+    raise TimeoutError(
+        f"Interface {interface_name} did not reach state {interface_state} "
+        f"within {timeout} seconds"
+    )
 
 class TestCANBus:
     """Test CAN bus functionality on Jetson devices."""
@@ -42,28 +46,32 @@ class TestCANBus:
             pytest.skip("Not found CAN interface that is not UP, skipping loopback test")
         original_interface_state = ssh.sudo(f"ip link show {can_interface} | grep -Po 'state \\w+' | cut -d ' ' -f 2").stdout.strip()
 
-        ssh.sudo("dnf install can-utils -y --transient") # for candump and cansend cli tools
-        # enable CAN driver 
-        ssh.sudo(f"ip link set {can_interface} type can bitrate 500000 loopback off") # verify the loopback is off before enabling it
-        ssh.sudo(f"ip link set {can_interface} type can bitrate 500000 loopback on")
-        ssh.sudo(f"ip link set {can_interface} up")
-        result = wait_for_interface_state(ssh, can_interface, "UP")
-        assert "UP" in result.stdout, "CAN interface is not up"
-        # send and receive CAN messages: candump to a log file so we can assert on it without holding the SSH channel open
         dump_log = "/tmp/candump_loopback.log"
-        ssh.run(f"candump {can_interface} >{dump_log} 2>&1 &")
-        time.sleep(0.5)  # let candump start
-        ssh.sudo(f"cansend {can_interface} 123#abcdabcd")
-        time.sleep(0.5)  # let the frame be received and written
-        result = ssh.sudo(f"cat {dump_log}")
-        assert "123" in result.stdout, "CAN message is not received as expected"
-        assert "AB CD AB CD" in result.stdout, "CAN message is not received as expected"
-        # disable CAN driver
-        ssh.sudo("pkill -f candump")
-        ssh.sudo(f"rm -f {dump_log}")
-        ssh.sudo("pkill -f cansend", fail_on_rc=False)
-        ssh.sudo(f"ip link set {can_interface} {original_interface_state.lower()}") # set the interface to the original state
-        result = wait_for_interface_state(ssh, can_interface, original_interface_state)
-        assert original_interface_state in result.stdout, f"CAN interface is not {original_interface_state}"
-        ssh.sudo(f"ip link set {can_interface} type can bitrate 500000 loopback off")
+        try:
+            ssh.sudo("dnf install can-utils -y --transient") # for candump and cansend cli tools
+            # enable CAN driver
+            ssh.sudo(f"ip link set {can_interface} type can bitrate 500000 loopback off") # verify the loopback is off before enabling it
+            ssh.sudo(f"ip link set {can_interface} type can bitrate 500000 loopback on")
+            ssh.sudo(f"ip link set {can_interface} up")
+            result = wait_for_interface_state(ssh, can_interface, "UP")
+            assert "UP" in result.stdout, "CAN interface is not up"
+            # send and receive CAN messages: candump to a log file so we can assert on it without holding the SSH channel open
+            ssh.run(f"candump {can_interface} >{dump_log} 2>&1 &")
+            time.sleep(0.5)  # let candump start
+            ssh.sudo(f"cansend {can_interface} 123#abcdabcd")
+            time.sleep(0.5)  # let the frame be received and written
+            result = ssh.sudo(f"cat {dump_log}")
+            assert "123" in result.stdout, "CAN message is not received as expected"
+            assert "AB CD AB CD" in result.stdout, "CAN message is not received as expected"
+        finally:
+            # Always restore CAN interface state, even if assertions fail
+            ssh.sudo("pkill -f candump", fail_on_rc=False)
+            ssh.sudo(f"rm -f {dump_log}", fail_on_rc=False)
+            ssh.sudo("pkill -f cansend", fail_on_rc=False)
+            ssh.sudo(f"ip link set {can_interface} {original_interface_state.lower()}")
+            try:
+                wait_for_interface_state(ssh, can_interface, original_interface_state)
+            except TimeoutError:
+                warnings.warn(f"Could not restore CAN interface {can_interface} to {original_interface_state}")
+            ssh.sudo(f"ip link set {can_interface} type can bitrate 500000 loopback off")
         

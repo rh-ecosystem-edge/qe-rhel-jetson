@@ -13,7 +13,7 @@ def _run(ssh, command: str, timeout: Optional[int] = 30) -> str:
     try:
         result = ssh.run(command, timeout=timeout, print_output=False)
         return (result.stdout or "").strip() if result.exit_status == 0 else ""
-    except Exception as e:
+    except (OSError, TimeoutError, RuntimeError, EOFError) as e:
         logger.debug("Command %r failed: %s", command, e)
         return ""
 
@@ -23,7 +23,7 @@ def _run_sudo(ssh, command: str, timeout: Optional[int] = 30) -> str:
     try:
         result = ssh.run(f"sudo {command}", timeout=timeout, print_output=False)
         return (result.stdout or "").strip() if result.exit_status == 0 else ""
-    except Exception as e:
+    except (OSError, TimeoutError, RuntimeError, EOFError) as e:
         logger.debug("Command sudo %r failed: %s", command, e)
         return ""
 

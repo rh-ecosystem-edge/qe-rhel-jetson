@@ -166,16 +166,20 @@ class BeakerClient:
   </params>
 </methodCall>'''
         
-        response = self._session.post(
-            rpc_url,
-            data=rpc_body,
-            headers={"Content-Type": "text/xml"},
-            timeout=self.config.timeout,
-        )
-        
+        try:
+            response = self._session.post(
+                rpc_url,
+                data=rpc_body,
+                headers={"Content-Type": "text/xml"},
+                timeout=self.config.timeout,
+            )
+        except Exception:
+            # Don't expose request body (contains password) in exception chain
+            raise BeakerAuthError("XML-RPC authentication request failed") from None
+
         if response.status_code != 200:
             raise BeakerAuthError(f"Password authentication failed: {response.status_code}")
-        
+
         if '<fault>' in response.text:
             # Extract actual error message
             fault_match = re.search(r'<faultString>.*?>(.*?)</string>', response.text)

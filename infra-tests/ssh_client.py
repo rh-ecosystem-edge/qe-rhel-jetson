@@ -64,7 +64,7 @@ class SSHConnection:
 
         for attempt in range(1, 4):  # up to 3 attempts
             self.client = paramiko.SSHClient()
-            self.client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            self.client.set_missing_host_key_policy(paramiko.WarningPolicy())
             try:
                 logger.info("[SSH debug] Step 2: Paramiko connect (attempt %s/3) ...", attempt)
                 self.client.connect(**connect_kw)
@@ -89,7 +89,10 @@ class SSHConnection:
             logger.info("[SSH debug] Step 3: open_sftp OK")
         except Exception as e:
             logger.error("[SSH debug] Step 3 FAILED (SFTP): %s", e, exc_info=True)
-            self.client.close()
+            try:
+                self.client.close()
+            except Exception as cleanup_error:
+                logger.warning("[SSH debug] Failed to close SSH client during SFTP cleanup: %s", cleanup_error)
             raise
     
     def run(self, command: str, timeout: Optional[int] = None, fail_on_rc: bool = True, print_output: bool = True):
