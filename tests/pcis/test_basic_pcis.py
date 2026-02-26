@@ -19,7 +19,7 @@ class TestPCIs:
     def test_pci_spec(self, ssh):
         """Test PCI specification."""
         spec = _conftest.get_hardware_spec(_conftest.HARDWARE_MODEL_NAME)
-        ssh.sudo("dnf install pciutils -y --transient") # for lspci cli tool
+        ssh.sudo("dnf install pciutils -y") # for lspci cli tool
         # check controllers present with expected speed and amount of lanes
         for controller, values in spec.get("pcis").items():
             capable_speed = values.get("capable_speed")

@@ -131,17 +131,22 @@ def install_beaker_repo(ssh, rhel_version: Optional[float]):
         raise ValueError("RHEL version not found, The environment is not a RHEL machine")
 
     main_rhel_version = str(rhel_version).split(".")[0]
+    # declare commands to install Beaker repositories and EPEL release
+    cmd_epel = f"dnf install https://dl.fedoraproject.org/pub/epel/epel-release-latest-{main_rhel_version}.noarch.rpm -y"
+    cmd_appstream = f"dnf config-manager --add-repo http://download.eng.rdu.redhat.com/released/rhel-{main_rhel_version}/RHEL-{main_rhel_version}/{rhel_version}.0/AppStream/aarch64/os/"
+    cmd_baseos = f"dnf config-manager --add-repo http://download.eng.rdu.redhat.com/released/rhel-{main_rhel_version}/RHEL-{main_rhel_version}/{rhel_version}.0/BaseOS/aarch64/os/"
+    
     result = ssh.sudo("dnf repolist | grep beaker- | wc -l")
     if result.exit_status == 0 and int(result.stdout.strip()) >= 12:
         logger.info("installing EPEL release for RHEL %s", rhel_version)
-        ssh.sudo(f"dnf install https://dl.fedoraproject.org/pub/epel/epel-release-latest-{main_rhel_version}.noarch.rpm -y --transient")
+        ssh.sudo(cmd_epel)
     else:
       logger.info("installing Beaker repositories and EPEL release for RHEL %s", rhel_version)
       for attempt in range(1, 4):
           try:
-              ssh.sudo(f"dnf config-manager --add-repo http://download.eng.rdu.redhat.com/released/rhel-{main_rhel_version}/RHEL-{main_rhel_version}/{rhel_version}.0/AppStream/aarch64/os/ --transient")
-              ssh.sudo(f"dnf config-manager --add-repo http://download.eng.rdu.redhat.com/released/rhel-{main_rhel_version}/RHEL-{main_rhel_version}/{rhel_version}.0/BaseOS/aarch64/os/ --transient")
-              ssh.sudo(f"dnf install https://dl.fedoraproject.org/pub/epel/epel-release-latest-{main_rhel_version}.noarch.rpm -y --transient")
+              ssh.sudo(cmd_appstream)
+              ssh.sudo(cmd_baseos)
+              ssh.sudo(cmd_epel)
               break
           except Exception as e:
               if attempt < 3:

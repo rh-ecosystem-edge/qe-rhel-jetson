@@ -106,7 +106,7 @@
     # Step 4: Pre-flight checks & Pull bootc image
     #=========================================================================
     - name: Check available disk space for container image
-      ansible.builtin.shell: df -BG /var/lib/containers 2>/dev/null || df -BG / | awk 'NR==2 {print $4}' | sed 's/G//'
+      ansible.builtin.shell: (df -BG --output=avail /var/lib/containers || df -BG --output=avail / | awk 'NR==2 {print $4}') | tail -n1 | sed 's/G//'
       register: disk_space
       changed_when: false
       tags: [image]

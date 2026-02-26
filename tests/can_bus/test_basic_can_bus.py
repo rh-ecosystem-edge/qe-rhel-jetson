@@ -42,13 +42,13 @@ class TestCANBus:
         # get the first CAN interface that is not UP
         can_interface = ssh.sudo(r"ip -o link show type can | grep -v UP | grep -Po 'can\d+' | head -n 1").stdout.strip()
         if can_interface == "":
-            warnings.warn("Not found CAN interface that is not UP, skipping loopback test") # for loopabck test we need a interface that is not in use
+            warnings.warn(UserWarning("Not found CAN interface that is not UP, skipping loopback test")) # for loopabck test we need a interface that is not in use
             pytest.skip("Not found CAN interface that is not UP, skipping loopback test")
         original_interface_state = ssh.sudo(f"ip link show {can_interface} | grep -Po 'state \\w+' | cut -d ' ' -f 2").stdout.strip()
 
         dump_log = "/tmp/candump_loopback.log"
         try:
-            ssh.sudo("dnf install can-utils -y --transient") # for candump and cansend cli tools
+            ssh.sudo("dnf install can-utils -y") # for candump and cansend cli tools
             # enable CAN driver
             ssh.sudo(f"ip link set {can_interface} type can bitrate 500000 loopback off") # verify the loopback is off before enabling it
             ssh.sudo(f"ip link set {can_interface} type can bitrate 500000 loopback on")
@@ -72,6 +72,6 @@ class TestCANBus:
             try:
                 wait_for_interface_state(ssh, can_interface, original_interface_state)
             except TimeoutError:
-                warnings.warn(f"Could not restore CAN interface {can_interface} to {original_interface_state}")
+                warnings.warn(UserWarning(f"Could not restore CAN interface {can_interface} to {original_interface_state}"))
             ssh.sudo(f"ip link set {can_interface} type can bitrate 500000 loopback off")
         

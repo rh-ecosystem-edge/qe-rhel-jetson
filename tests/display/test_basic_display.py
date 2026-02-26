@@ -16,6 +16,17 @@ class TestDisplay:
 
     def test_display_by_drm(self, ssh):
         """Test display sysfs entries and status"""
+        # nvidia_drm is loaded via load-nvidia-drm.service which requires graphical.target.
+        # On RPM-only setups using multi-user.target, nvidia_drm won't be loaded and
+        # /sys/class/drm/card*-*/status won't exist.
+        drm_mod = ssh.run("lsmod | grep nvidia_drm")
+        if drm_mod.exit_status != 0:
+            warnings.warn(UserWarning(
+                "nvidia_drm module is not loaded — load-nvidia-drm.service requires "
+                "graphical.target (RPM-only typically uses multi-user.target). "
+                "To enable, add 'nvidia-drm' to /etc/modules-load.d/nvidia-load.conf"
+            ))
+            return
         # Check that DRM class exists
         result = ssh.run("ls -1 /sys/class/drm/ 2>/dev/null")
         assert result.exit_status == 0, f"Failed to access DRM sysfs: {result.stderr}"
@@ -29,9 +40,13 @@ class TestDisplay:
     def test_x11_display(self, ssh):
         """Test X11 display if available."""
         result = ssh.run("which Xorg 2>/dev/null || which X 2>/dev/null")
-        # X11 Server isthe "classic" Linux display engine
-        # X server may or may not be installed, so we just check if command succeeds
-        assert result.exit_status == 0, f"Failed to check for X server: {result.stderr}"
+        # Xorg is not a JetPack RPM — it's optionally installed in bootc Containerfiles.
+        # Its absence on RPM-only setups is not a driver issue.
+        if result.exit_status != 0:
+            warnings.warn(UserWarning(
+                "Xorg/X11 server is not installed — Xorg is not part of JetPack RPMs "
+                "and is only present when explicitly installed (e.g., in bootc images)"
+            ))
 
     def test_wayland_libs(self, ssh):
         """Test Wayland-related libraries are present (nvidia-jetpack-wayland)."""

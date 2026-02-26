@@ -8,7 +8,7 @@ import time
 import paramiko
 from pathlib import Path
 from typing import Optional
-
+from tests import conftest as _conftest 
 logger = logging.getLogger(__name__)
 
 
@@ -106,6 +106,23 @@ class SSHConnection:
         Returns:
             Result object with stdout and exit_status attributes
         """
+        MUTATING_DNF_COMMANDS = [
+            "install", 
+            "remove", 
+            "update", 
+            "upgrade", 
+            "dist-sync", 
+            "group", 
+            "config-manager"
+        ]
+        # if bootc is available, add --transient to the dnf commands
+        if _conftest.BOOTC_AVAILABLE:
+            # Split the command into parts to check the actual sub-command accurately
+            cmd_parts = command.split()
+            if any(sub_cmd in cmd_parts for sub_cmd in MUTATING_DNF_COMMANDS):
+                # Ensure we don't double-add the flag if it's already there
+                if "--transient" not in command:
+                    command += " --transient"
         if print_output:
             print("\t\tRunning command:", command)
         stdin, stdout, stderr = self.client.exec_command(command, timeout=timeout)
@@ -138,7 +155,7 @@ class SSHConnection:
         """
         result = self.run(f"sudo {command}", timeout=timeout, print_output=print_output)
         if fail_on_rc and result.exit_status != expect_rc:
-            raise RuntimeError(f"Command '{command}' failed with exit status {result.exit_status}. Expected {expect_rc}.")
+            raise RuntimeError(f"Command '{command}' failed with exit status {result.exit_status}. Expected {expect_rc}. Error: {result.stderr}. \n\t\tOutput: {result.stdout}")
         return result
     
     def put(self, local_path: Path, remote_path: str):
