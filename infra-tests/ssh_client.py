@@ -39,6 +39,9 @@ class SSHConnection:
             "[SSH debug] Connecting: host=%s port=%s user=%s timeout=%ss key=%s",
             hostname, port, username, timeout, key_filename or "password",
         )
+
+        self.password = password
+
         # Step 1: quick TCP check (fails here if host unreachable or you need ProxyJump)
         try:
             logger.info("[SSH debug] Step 1: TCP connect to %s:%s ...", hostname, port)
@@ -153,7 +156,7 @@ class SSHConnection:
         Returns:
             Result object with stdout and exit_status attributes
         """
-        result = self.run(f"sudo {command}", timeout=timeout, print_output=print_output)
+        result = self.run(f"echo {self.password} | sudo -S {command}", timeout=timeout, print_output=print_output)
         if fail_on_rc and result.exit_status != expect_rc:
             raise RuntimeError(f"Command '{command}' failed with exit status {result.exit_status}. Expected {expect_rc}. Error: {result.stderr}. \n\t\tOutput: {result.stdout}")
         return result
