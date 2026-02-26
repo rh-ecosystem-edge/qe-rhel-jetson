@@ -1,0 +1,546 @@
+---
+# Ansible Playbook: Install NVIDIA JetPack RPMs on Jetson Systems
+#
+# Usage:
+#   ansible-playbook -i inventory.yml install_jetpack_rpms.yml \
+#     -e "target_host=nvidia-igx-orin-04.khw.eng.bos2.dc.redhat.com"
+#
+# With subscription credentials:
+#   ansible-playbook -i inventory.yml install_jetpack_rpms.yml \
+#     -e "target_host=nvidia-igx-orin-04.khw.eng.bos2.dc.redhat.com" \
+#     -e "rhsm_username=rh-ee-youruser" \
+#     -e "rhsm_password=your_kerberos_password"
+#
+# Skip subscription (if already registered):
+#   ansible-playbook -i inventory.yml install_jetpack_rpms.yml \
+#     -e "skip_subscription=true"
+#
+# Override repo URL:
+#   ansible-playbook -i inventory.yml install_jetpack_rpms.yml \
+#     -e "jetpack_repo_baseurl=http://my-mirror/nvidia-jetpack"
+#
+# Skip reboot (for testing):
+#   ansible-playbook -i inventory.yml install_jetpack_rpms.yml \
+#     -e "auto_reboot=false"
+#
+# Set device to max performance after install:
+#   ansible-playbook -i inventory.yml install_jetpack_rpms.yml \
+#     -e "set_max_performance=true"
+#
+# Override reservation hours (boot order restores 2h before end):
+#   ansible-playbook -i inventory.yml install_jetpack_rpms.yml \
+#     -e "reservation_hours=24"
+#
+# Dry run:
+#   ansible-playbook -i inventory.yml install_jetpack_rpms.yml --check
+#
+# Based on: "5 Steps Installing JetPack RPMs" - QE Team Documentation
+
+- name: Install NVIDIA JetPack RPMs on Jetson systems
+  hosts: all
+  gather_facts: true
+  become: true
+
+  vars:
+    # JetPack repository configuration
+    jetpack_repo_id: "nvidia-jetpack-el9"
+    jetpack_repo_name: "NVIDIA JetPack for RHEL 9"
+    jetpack_repo_url: "http://hwcert-vm-repo-01.lab.eng.rdu2.redhat.com/packages/RHEL9/nvidia-jetpack/nvidia-jetpack-el9.repo"
+    jetpack_repo_baseurl: "http://hwcert-vm-repo-01.lab.eng.rdu2.redhat.com/packages/RHEL9/nvidia-jetpack"
+    jetpack_repo_file: "/etc/yum.repos.d/nvidia-jetpack-el9.repo"
+
+    # NVIDIA Container Toolkit repository
+    nvidia_container_toolkit_repo: "https://nvidia.github.io/libnvidia-container/stable/rpm/nvidia-container-toolkit.repo"
+
+    # Packages to install
+    jetpack_packages:
+      - nvidia-jetpack-all
+      - nvidia-jetpack-kmod
+      - nvidia-container-toolkit
+
+    # Boot configuration
+    auto_reboot: true
+    setup_boot_restore: true
+    reservation_hours: 24
+    boot_restore_hours: "{{ (reservation_hours | default(24) | int) - 2 }}"
+
+    # Optional features
+    skip_subscription: false
+    set_max_performance: false
+    enable_graphical_target: false
+
+  pre_tasks:
+    - name: Display target information
+      ansible.builtin.debug:
+        msg: |
+          ========================================
+          JetPack RPM Installation Starting
+          ========================================
+          Target:   {{ inventory_hostname }} ({{ ansible_host | default(inventory_hostname) }})
+          OS:       {{ ansible_distribution | default('unknown') }} {{ ansible_distribution_version | default('') }}
+          Arch:     {{ ansible_architecture | default('unknown') }}
+          Repo:     {{ jetpack_repo_id }}
+          ========================================
+
+  tasks:
+    #=========================================================================
+    # Step 1: Red Hat Subscription Registration
+    #=========================================================================
+    - name: Check subscription status
+      ansible.builtin.command: subscription-manager status
+      register: subscription_status
+      changed_when: false
+      failed_when: false
+      when: not skip_subscription
+      tags: [subscription]
+
+    - name: Register with Red Hat subscription
+      ansible.builtin.command:
+        cmd: subscription-manager register --username='{{ rhsm_username }}' --password='{{ rhsm_password }}'
+      no_log: true
+      when:
+        - not skip_subscription
+        - rhsm_username is defined
+        - rhsm_password is defined
+        - subscription_status.rc != 0
+      register: subscription_result
+      failed_when: false
+      tags: [subscription]
+
+    - name: Display subscription registration result
+      ansible.builtin.debug:
+        msg: "{{ subscription_result.stdout | default('Already registered or skipped') }}"
+      when: not skip_subscription
+      tags: [subscription]
+
+    - name: Handle subscription UUID error (if needed)
+      when:
+        - subscription_result is defined
+        - subscription_result.rc is defined
+        - subscription_result.rc != 0
+        - "'could not be found' in (subscription_result.stderr | default(''))"
+      tags: [subscription]
+      block:
+        - name: Extract UUID from error message
+          ansible.builtin.set_fact:
+            failed_uuid: "{{ subscription_result.stderr | regex_search('[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', ignorecase=True) }}"
+
+        - name: Create facts directory
+          ansible.builtin.file:
+            path: /etc/rhsm/facts
+            state: directory
+            mode: '0755'
+
+        - name: Create redhat.facts with UUID override
+          ansible.builtin.copy:
+            content: '{"dmi.system.uuid":"{{ failed_uuid }}"}'
+            dest: /etc/rhsm/facts/redhat.facts
+            mode: '0644'
+          when: failed_uuid | length > 0
+
+        - name: Retry subscription registration
+          ansible.builtin.command:
+            cmd: subscription-manager register --username='{{ rhsm_username }}' --password='{{ rhsm_password }}'
+          no_log: true
+          when: failed_uuid | length > 0
+
+    #=========================================================================
+    # Step 2: Save Original Boot Order
+    #=========================================================================
+    - name: Get current EFI boot configuration
+      ansible.builtin.command: efibootmgr
+      register: efi_boot_info
+      changed_when: false
+      check_mode: false
+      tags: [boot]
+
+    - name: Parse boot order
+      ansible.builtin.set_fact:
+        original_boot_order: "{{ (efi_boot_info.stdout | regex_search('BootOrder: (.+)', '\\1') | default(['0000'], true) | first) }}"
+      tags: [boot]
+
+    - name: Find RHEL boot entry number
+      ansible.builtin.set_fact:
+        rhel_boot_entry: "{{ (efi_boot_info.stdout | regex_search('Boot([0-9A-Fa-f]{4})\\* Red Hat Enterprise Linux', '\\1') | default([''], true) | first) }}"
+      tags: [boot]
+
+    - name: Display boot information
+      ansible.builtin.debug:
+        msg: |
+          Original boot order: {{ original_boot_order }}
+          RHEL boot entry: Boot{{ rhel_boot_entry }}
+      tags: [boot]
+
+    - name: Save boot order to local file
+      ansible.builtin.copy:
+        content: |
+          # Boot order saved at {{ ansible_date_time.iso8601 | default('unknown') }}
+          # Host: {{ inventory_hostname }}
+          # Original BootOrder: {{ original_boot_order }}
+          {{ efi_boot_info.stdout }}
+        dest: "/tmp/original_boot_order.txt"
+        mode: '0644'
+      tags: [boot]
+
+    #=========================================================================
+    # Step 3: Add NVIDIA JetPack Repository
+    #=========================================================================
+    - name: Download NVIDIA JetPack repository file
+      ansible.builtin.get_url:
+        url: "{{ jetpack_repo_url }}"
+        dest: "{{ jetpack_repo_file }}"
+        mode: '0644'
+      tags: [repo]
+
+    - name: Verify repository is available
+      ansible.builtin.command:
+        cmd: dnf repolist {{ jetpack_repo_id }}
+      register: repolist_result
+      changed_when: false
+      tags: [repo]
+
+    - name: Display repository status
+      ansible.builtin.debug:
+        var: repolist_result.stdout_lines
+      tags: [repo]
+
+    #=========================================================================
+    # Step 4: Add NVIDIA Container Toolkit Repository
+    #=========================================================================
+    - name: Add NVIDIA Container Toolkit repository
+      ansible.builtin.get_url:
+        url: "{{ nvidia_container_toolkit_repo }}"
+        dest: /etc/yum.repos.d/nvidia-container-toolkit.repo
+        mode: '0644'
+      tags: [repo]
+
+    #=========================================================================
+    # Step 5: Configure User Groups
+    #=========================================================================
+    - name: Get current user
+      ansible.builtin.command: whoami
+      register: current_user
+      changed_when: false
+      tags: [config]
+
+    - name: Add current user to video group
+      ansible.builtin.user:
+        name: "{{ current_user.stdout }}"
+        groups: video
+        append: true
+      tags: [config]
+
+    - name: Check if gdm user exists
+      ansible.builtin.getent:
+        database: passwd
+        key: gdm
+      register: gdm_user
+      failed_when: false
+      tags: [config]
+
+    - name: Add gdm to video group (if display configured)
+      ansible.builtin.user:
+        name: gdm
+        groups: video
+        append: true
+      when: gdm_user.ansible_facts.getent_passwd.gdm is defined
+      tags: [config]
+
+    #=========================================================================
+    # Step 6: Install JetPack and NVIDIA Container Toolkit
+    #=========================================================================
+    - name: Install NVIDIA JetPack and Container Toolkit packages
+      ansible.builtin.dnf:
+        name: "{{ jetpack_packages }}"
+        state: present
+      register: install_result
+      tags: [install]
+
+    - name: Display installation result
+      ansible.builtin.debug:
+        msg: |
+          Installation changed: {{ install_result.changed }}
+      tags: [install]
+
+    - name: Run depmod to register kernel modules
+      ansible.builtin.command:
+        cmd: depmod -a
+      when: install_result.changed
+      tags: [install]
+
+    - name: Load nvmap kernel module
+      ansible.builtin.command:
+        cmd: modprobe nvmap
+      failed_when: false
+      tags: [install]
+
+    #=========================================================================
+    # Step 7: Set graphical target (optional)
+    #=========================================================================
+    - name: Set default target to graphical
+      ansible.builtin.command:
+        cmd: systemctl set-default graphical.target
+      when: enable_graphical_target
+      tags: [config]
+
+    #=========================================================================
+    # Step 8: Reorder EFI Boot Entries (RHEL first)
+    #=========================================================================
+    - name: Calculate new boot order with RHEL first
+      ansible.builtin.set_fact:
+        new_boot_order: "{{ ([rhel_boot_entry] + (original_boot_order.split(',') | reject('equalto', rhel_boot_entry) | list)) | join(',') }}"
+      when: rhel_boot_entry | length > 0
+      tags: [boot]
+
+    - name: Set new boot order with RHEL first
+      ansible.builtin.command:
+        cmd: "efibootmgr -o {{ new_boot_order }}"
+      when:
+        - rhel_boot_entry | length > 0
+        - new_boot_order != original_boot_order
+      register: set_boot_order_result
+      tags: [boot]
+
+    - name: Display new boot order
+      ansible.builtin.debug:
+        msg: |
+          New boot order set: {{ new_boot_order }}
+          Original was: {{ original_boot_order }}
+      when: rhel_boot_entry | length > 0
+      tags: [boot]
+
+    #=========================================================================
+    # Step 9: Create Boot Restoration Service and Timer
+    #=========================================================================
+    - name: Create boot restoration script
+      ansible.builtin.copy:
+        dest: /usr/local/bin/restore_boot_order.sh
+        mode: '0755'
+        content: |
+          #!/bin/bash
+          BOOT_ORDER="$1"
+          if [ -n "$BOOT_ORDER" ]; then
+              efibootmgr -o "$BOOT_ORDER"
+              echo "Boot order restored to: $BOOT_ORDER"
+          fi
+      when: setup_boot_restore
+      tags: [restore]
+
+    - name: Create boot restoration systemd service
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/restore-bootorder.service
+        mode: '0644'
+        content: |
+          [Unit]
+          Description=Restore EFI Boot Order to Original
+
+          [Service]
+          Type=oneshot
+          ExecStart=/usr/local/bin/restore_boot_order.sh {{ original_boot_order }}
+
+          [Install]
+          WantedBy=multi-user.target
+      when: setup_boot_restore
+      tags: [restore]
+
+    - name: Create boot restoration timer
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/restore-bootorder.timer
+        mode: '0644'
+        content: |
+          [Unit]
+          Description=Restore EFI Boot Order in {{ boot_restore_hours }}h
+
+          [Timer]
+          OnActiveSec={{ boot_restore_hours }}h
+          Persistent=true
+
+          [Install]
+          WantedBy=timers.target
+      when: setup_boot_restore
+      tags: [restore]
+
+    - name: Reload systemd daemon
+      ansible.builtin.systemd:
+        daemon_reload: true
+      when: setup_boot_restore
+      tags: [restore]
+
+    - name: Enable and start boot restoration timer
+      ansible.builtin.systemd:
+        name: restore-bootorder.timer
+        enabled: true
+        state: started
+      when: setup_boot_restore
+      tags: [restore]
+
+    #=========================================================================
+    # Step 10: Reboot System
+    #=========================================================================
+    - name: Reboot the system
+      ansible.builtin.reboot:
+        reboot_timeout: 600
+        msg: "Rebooting after JetPack RPM installation"
+      when: auto_reboot
+      tags: [reboot]
+
+    - name: Wait for system to be accessible
+      ansible.builtin.wait_for_connection:
+        timeout: 300
+      when: auto_reboot
+      tags: [reboot]
+
+    #=========================================================================
+    # Step 11: Restore Boot Order After Reboot
+    #=========================================================================
+    - name: Restore original boot order
+      ansible.builtin.command:
+        cmd: "efibootmgr -o {{ original_boot_order }}"
+      when: auto_reboot
+      tags: [boot]
+
+    #=========================================================================
+    # Step 12: Generate NVIDIA CDI Specification
+    #=========================================================================
+    - name: Create CDI directory
+      ansible.builtin.file:
+        path: /etc/cdi
+        state: directory
+        mode: '0755'
+      tags: [cdi]
+
+    - name: Generate NVIDIA CDI spec file
+      ansible.builtin.command:
+        cmd: nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml
+      register: cdi_generate_result
+      failed_when: false
+      tags: [cdi]
+
+    - name: Display CDI generation result
+      ansible.builtin.debug:
+        msg: "{{ cdi_generate_result.stdout | default('CDI generation completed') }}"
+      tags: [cdi]
+
+    #=========================================================================
+    # Step 13: Create NVIDIA CDI Systemd Service
+    #=========================================================================
+    - name: Create nvidia-cdi systemd service
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/nvidia-cdi.service
+        mode: '0644'
+        content: |
+          [Unit]
+          Description=Generate the nvidia cdi yaml file
+          Requires=multi-user.target
+          After=multi-user.target
+
+          [Service]
+          Type=oneshot
+          ExecStart=nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml
+          RemainAfterExit=yes
+
+          [Install]
+          WantedBy=multi-user.target
+      tags: [cdi]
+
+    - name: Reload systemd daemon for CDI service
+      ansible.builtin.systemd:
+        daemon_reload: true
+      tags: [cdi]
+
+    - name: Enable nvidia-cdi service
+      ansible.builtin.systemd:
+        name: nvidia-cdi.service
+        enabled: true
+      tags: [cdi]
+
+    #=========================================================================
+    # Step 14: Set Maximum Performance (Optional)
+    #=========================================================================
+    - name: Query current nvpmodel status
+      ansible.builtin.command:
+        cmd: nvpmodel -q
+      register: nvpmodel_status
+      changed_when: false
+      failed_when: false
+      when: set_max_performance
+      tags: [performance]
+
+    - name: Display current nvpmodel status
+      ansible.builtin.debug:
+        var: nvpmodel_status.stdout_lines
+      when: set_max_performance and nvpmodel_status.stdout is defined
+      tags: [performance]
+
+    - name: Set nvpmodel to maximum performance (mode 0)
+      ansible.builtin.command:
+        cmd: nvpmodel -m 0
+      when: set_max_performance
+      failed_when: false
+      tags: [performance]
+
+    - name: Set CPU and GPU clock speeds to maximum
+      ansible.builtin.command:
+        cmd: jetson_clocks
+      when: set_max_performance
+      failed_when: false
+      tags: [performance]
+
+    #=========================================================================
+    # Step 15: Verify Installation
+    #=========================================================================
+    - name: Check Tegra release information
+      ansible.builtin.command:
+        cmd: cat /etc/nv_tegra_release
+      register: tegra_release
+      changed_when: false
+      failed_when: false
+      tags: [verify]
+
+    - name: Check Jetson model
+      ansible.builtin.command:
+        cmd: cat /sys/firmware/devicetree/base/model
+      register: jetson_model
+      changed_when: false
+      failed_when: false
+      tags: [verify]
+
+    - name: List installed NVIDIA JetPack packages
+      ansible.builtin.command:
+        cmd: rpm -qa 'nvidia-*' --qf '%{NAME}-%{VERSION}-%{RELEASE}.%{ARCH}\n'
+      register: installed_packages
+      changed_when: false
+      tags: [verify]
+
+    - name: Check nvidia-smi (if available)
+      ansible.builtin.command:
+        cmd: nvidia-smi -L
+      register: nvidia_smi
+      changed_when: false
+      failed_when: false
+      tags: [verify]
+
+    - name: Display installation summary
+      ansible.builtin.debug:
+        msg: |
+          ========================================
+          JetPack RPM Installation Complete!
+          ========================================
+          Host:          {{ inventory_hostname }}
+          
+          Tegra Release: {{ tegra_release.stdout | default('Not available') }}
+          Jetson Model:  {{ jetson_model.stdout | default('Not available') }}
+          
+          GPU Info:      {{ nvidia_smi.stdout | default('nvidia-smi not available') }}
+          
+          Boot Order:
+            Original:    {{ original_boot_order }}
+            Restored:    Yes
+            Timer:       {{ boot_restore_hours }}h (auto-restore)
+          
+          CDI Service:   Enabled (nvidia-cdi.service)
+          
+          Packages Installed ({{ installed_packages.stdout_lines | length }}):
+          {{ installed_packages.stdout }}
+          ========================================
+      tags: [verify]
