@@ -300,6 +300,14 @@
     #=========================================================================
     # Step 7: Install additional packages for testing
     #=========================================================================
+    - name: Install EPEL repository (required for can-utils)
+      ansible.builtin.dnf:
+        name: "https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm"
+        state: present
+        disable_gpg_check: true
+      failed_when: false
+      tags: [install]
+
     - name: Install additional packages (podman, can-utils, usbutils)
       ansible.builtin.dnf:
         name: "{{ additional_packages }}"
