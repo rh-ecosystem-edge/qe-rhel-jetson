@@ -31,10 +31,21 @@
 #   ansible-playbook -i inventory.yml install_jetpack_rpms.yml \
 #     -e "reservation_hours=24"
 #
+# Install X11/Xorg (for display testing):
+#   ansible-playbook -i inventory.yml install_jetpack_rpms.yml \
+#     -e "install_x11=true"
+#
+# Skip initramfs regeneration:
+#   ansible-playbook -i inventory.yml install_jetpack_rpms.yml \
+#     -e "regenerate_initramfs=false"
+#
 # Dry run:
 #   ansible-playbook -i inventory.yml install_jetpack_rpms.yml --check
 #
 # Based on: "5 Steps Installing JetPack RPMs" - QE Team Documentation
+#
+# Note: This playbook sets graphical.target and regenerates initramfs by default.
+# This is required for nvidia_drm and other GPU modules to load properly.
 
 - name: Install NVIDIA JetPack RPMs on Jetson systems
   hosts: all
@@ -58,6 +69,16 @@
       - nvidia-jetpack-kmod
       - nvidia-container-toolkit
 
+    # Additional packages required for testing
+    additional_packages:
+      - podman
+      - can-utils
+      - usbutils
+
+    # Optional X11 packages (set install_x11=true to install)
+    x11_packages:
+      - xorg-x11-server-Xorg
+
     # Boot configuration
     auto_reboot: true
     setup_boot_restore: true
@@ -67,7 +88,9 @@
     # Optional features
     skip_subscription: false
     set_max_performance: false
-    enable_graphical_target: false
+    enable_graphical_target: true
+    regenerate_initramfs: true
+    install_x11: false
 
   pre_tasks:
     - name: Display target information
@@ -275,16 +298,51 @@
       tags: [install]
 
     #=========================================================================
-    # Step 7: Set graphical target (optional)
+    # Step 7: Install additional packages for testing
+    #=========================================================================
+    - name: Install additional packages (podman, can-utils, usbutils)
+      ansible.builtin.dnf:
+        name: "{{ additional_packages }}"
+        state: present
+      failed_when: false
+      tags: [install]
+
+    - name: Install X11 packages (optional)
+      ansible.builtin.dnf:
+        name: "{{ x11_packages }}"
+        state: present
+      when: install_x11
+      failed_when: false
+      tags: [install]
+
+    #=========================================================================
+    # Step 8: Set graphical target and regenerate initramfs
     #=========================================================================
     - name: Set default target to graphical
       ansible.builtin.command:
         cmd: systemctl set-default graphical.target
       when: enable_graphical_target
+      register: graphical_target_result
+      changed_when: "'Created symlink' in graphical_target_result.stdout or graphical_target_result.rc == 0"
+      failed_when: false
+      tags: [config]
+
+    - name: Regenerate initramfs with dracut
+      ansible.builtin.command:
+        cmd: dracut -vf
+      when: regenerate_initramfs
+      register: dracut_result
+      changed_when: dracut_result.rc == 0
+      tags: [config]
+
+    - name: Display initramfs regeneration status
+      ansible.builtin.debug:
+        msg: "initramfs regenerated successfully"
+      when: regenerate_initramfs and dracut_result.rc == 0
       tags: [config]
 
     #=========================================================================
-    # Step 8: Reorder EFI Boot Entries (RHEL first)
+    # Step 9: Reorder EFI Boot Entries (RHEL first)
     #=========================================================================
     - name: Calculate new boot order with RHEL first
       ansible.builtin.set_fact:
