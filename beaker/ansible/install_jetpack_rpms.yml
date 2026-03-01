@@ -272,17 +272,40 @@
     #=========================================================================
     # Step 6: Install JetPack and NVIDIA Container Toolkit
     #=========================================================================
-    - name: Install NVIDIA JetPack and Container Toolkit packages
+    - name: Install all packages from nvidia-jetpack-el9 repository
+      ansible.builtin.command:
+        cmd: dnf repository-packages nvidia-jetpack-el9 install -y
+      register: jetpack_install_result
+      changed_when: "'Nothing to do' not in jetpack_install_result.stdout"
+      tags: [install]
+
+    - name: Install all packages from nvidia-jetpack-kmod-el9 repository
+      ansible.builtin.command:
+        cmd: dnf repository-packages nvidia-jetpack-kmod-el9 install -y
+      register: kmod_install_result
+      changed_when: "'Nothing to do' not in kmod_install_result.stdout"
+      failed_when: false
+      tags: [install]
+
+    - name: Install NVIDIA Container Toolkit
       ansible.builtin.dnf:
-        name: "{{ jetpack_packages }}"
+        name: nvidia-container-toolkit
         state: present
-      register: install_result
+      register: toolkit_install_result
+      tags: [install]
+
+    - name: Set install_result changed flag
+      ansible.builtin.set_fact:
+        install_result:
+          changed: "{{ jetpack_install_result.changed or kmod_install_result.changed | default(false) or toolkit_install_result.changed }}"
       tags: [install]
 
     - name: Display installation result
       ansible.builtin.debug:
         msg: |
-          Installation changed: {{ install_result.changed }}
+          JetPack install changed: {{ jetpack_install_result.changed }}
+          Kmod install changed: {{ kmod_install_result.changed | default('skipped') }}
+          Container toolkit changed: {{ toolkit_install_result.changed }}
       tags: [install]
 
     - name: Run depmod to register kernel modules
