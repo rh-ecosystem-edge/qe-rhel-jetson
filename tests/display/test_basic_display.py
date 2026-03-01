@@ -16,15 +16,23 @@ class TestDisplay:
 
     def test_display_by_drm(self, ssh):
         """Test display sysfs entries and status"""
-        # nvidia_drm is loaded via load-nvidia-drm.service which requires graphical.target.
+        # nvidia_drm is currently loaded via load-nvidia-drm.service (requires graphical.target).
         # On RPM-only setups using multi-user.target, nvidia_drm won't be loaded and
-        # /sys/class/drm/card*-*/status won't exist.
+
+        # /sys/class/drm/card*-*/status won't exist. The root cause is initramfs composition
+        # (dracut.conf add_drivers+=) — bootc includes it in initramfs, RPM-only does not.
+
+        # The nvidia-jetson-sidecar team confirmed nvidia_drm should load by default
+        # regardless of target. Once the RPM/dracut config is updated, this warning
+        # will no longer trigger and the test will pass on both setups.
+        #TODO: Once the RPM/dracut config is updated, this warning will no longer trigger and the test will pass on both setups.
         drm_mod = ssh.run("lsmod | grep nvidia_drm")
         if drm_mod.exit_status != 0:
             warnings.warn(UserWarning(
-                "nvidia_drm module is not loaded — load-nvidia-drm.service requires "
-                "graphical.target (RPM-only typically uses multi-user.target). "
-                "To enable, add 'nvidia-drm' to /etc/modules-load.d/nvidia-load.conf"
+                "nvidia_drm module is not loaded — currently depends on graphical.target "
+                "via load-nvidia-drm.service. The RPM dracut config should be updated to "
+                "load nvidia_drm by default (add to dracut.conf add_drivers+= or "
+                "/etc/modules-load.d/nvidia-load.conf)"
             ))
             return
         # Check that DRM class exists
@@ -40,12 +48,13 @@ class TestDisplay:
     def test_x11_display(self, ssh):
         """Test X11 display if available."""
         result = ssh.run("which Xorg 2>/dev/null || which X 2>/dev/null")
-        # Xorg is not a JetPack RPM — it's optionally installed in bootc Containerfiles.
-        # Its absence on RPM-only setups is not a driver issue.
+        # Xorg is NOT a JetPack RPM — it's installed in bootc Containerfiles only to
+        # ease internal testing and will be removed from production images.
+        # Its absence is expected on RPM-only setups and future production bootc images.
         if result.exit_status != 0:
             warnings.warn(UserWarning(
                 "Xorg/X11 server is not installed — Xorg is not part of JetPack RPMs "
-                "and is only present when explicitly installed (e.g., in bootc images)"
+                "(installed in bootc for internal testing only, not in production images)"
             ))
 
     def test_wayland_libs(self, ssh):

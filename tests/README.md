@@ -47,6 +47,12 @@ Tests can be configured via environment variables:
 - `JETSON_PASSWORD`: SSH password
 - `JETSON_PORT`: SSH port (default: 22)
 
+Another configuration you need to make sure is your host is knowns for the system
+
+```bash
+ssh-keyscan -H ${JETSON_HOST} >> ~/.ssh/known_hosts
+```
+
 ## Running Tests
 
 Run all tests:
