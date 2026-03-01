@@ -103,15 +103,30 @@
       tags: [registry]
     
     #=========================================================================
-    # Step 4: Pull bootc image
+    # Step 4: Pre-flight checks & Pull bootc image
     #=========================================================================
+    - name: Check available disk space for container image
+      ansible.builtin.shell: (df -BG --output=avail /var/lib/containers || df -BG --output=avail / | awk 'NR==2 {print $4}') | tail -n1 | sed 's/G//'
+      register: disk_space
+      changed_when: false
+      tags: [image]
+
+    - name: Ensure sufficient disk space for container image
+      ansible.builtin.assert:
+        that:
+          - disk_space.stdout | trim | int > 10
+        fail_msg: "Insufficient disk space. Need at least 10GB free, have {{ disk_space.stdout | trim }}GB"
+      tags: [image]
+
     - name: Pull bootc image
       ansible.builtin.command:
         cmd: podman pull {{ bootc_image }}
       register: pull_result
       changed_when: "'Copying' in pull_result.stdout or 'Writing' in pull_result.stderr"
+      async: 1800
+      poll: 15
       tags: [image]
-    
+
     #=========================================================================
     # Step 5: Run bootc install to-existing-root
     #=========================================================================
@@ -128,6 +143,8 @@
           --root-ssh-authorized-keys=/target/root/.ssh/authorized_keys
           --skip-fetch-check
       register: bootc_install
+      async: 2400
+      poll: 15
       tags: [install]
     
     - name: Display bootc install output

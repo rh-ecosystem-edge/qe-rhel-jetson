@@ -5,6 +5,7 @@ collects hardware info from infra-tests/hardware_info.py for use in all tests.
 """
 import pytest
 import os
+import time
 from pathlib import Path
 import sys
 import importlib.util
@@ -75,7 +76,15 @@ BOOTC_VERSION: Optional[Union[float, str]] = None  # str if X.Y.Z, float if X.Y
 BOOTC_IMAGE_VERSION: Optional[Union[str]] = None
 BOOTC_IMAGE_URL: Optional[str] = None
 
-key_path = os.path.expanduser(JETSON_KEY_PATH) if JETSON_KEY_PATH else None
+if JETSON_KEY_PATH: # key path provided, use key-based authentication
+    key_path = os.path.expanduser(JETSON_KEY_PATH)
+    if not os.path.exists(key_path):
+        raise ValueError(
+            f"SSH key file not found: {key_path}\n"
+            f"Set JETSON_KEY_PATH to a valid SSH private key path."
+        )
+else: # no key path provided, use password authentication
+    key_path = None
 
 # ---------------------------------------------------------------------------
 # Functions
@@ -84,8 +93,16 @@ key_path = os.path.expanduser(JETSON_KEY_PATH) if JETSON_KEY_PATH else None
 def _load_hardware_specs() -> Dict[str, Any]:
     """Load jetson_hardware_specs.yaml once."""
     path = Path(__file__).parent / "jetson_hardware_specs.yaml"
-    with open(path) as f:
-        return yaml.safe_load(f)
+    try:
+        with open(path) as f:
+            data = yaml.safe_load(f)
+        if not isinstance(data, dict):
+            raise ValueError(f"Hardware specs must be a dictionary, got {type(data)}")
+        return data
+    except yaml.YAMLError as e:
+        raise ValueError(f"Invalid YAML in {path}: {e}")
+    except FileNotFoundError:
+        raise ValueError(f"Hardware specs file not found: {path}")
 
 def get_hardware_spec(hardware_model_name: Optional[str]) -> Optional[Dict[str, Any]]:
     """
@@ -107,21 +124,36 @@ def install_beaker_repo(ssh, rhel_version: Optional[float]):
     """
     Install Beaker repository on the Jetson.
     RHEL version is required to install the correct Beaker repository.
+    Retries DNF operations up to 3 times to handle transient mirror failures.
     """
-    logger.info("Checking Beaker reposetories exist on the Jetson...")
+    logger.info("Checking Beaker repositories exist on the Jetson...")
     if rhel_version is None:
         raise ValueError("RHEL version not found, The environment is not a RHEL machine")
 
     main_rhel_version = str(rhel_version).split(".")[0]
+    # declare commands to install Beaker repositories and EPEL release
+    cmd_epel = f"dnf install https://dl.fedoraproject.org/pub/epel/epel-release-latest-{main_rhel_version}.noarch.rpm -y"
+    cmd_appstream = f"dnf config-manager --add-repo http://download.eng.rdu.redhat.com/released/rhel-{main_rhel_version}/RHEL-{main_rhel_version}/{rhel_version}.0/AppStream/aarch64/os/"
+    cmd_baseos = f"dnf config-manager --add-repo http://download.eng.rdu.redhat.com/released/rhel-{main_rhel_version}/RHEL-{main_rhel_version}/{rhel_version}.0/BaseOS/aarch64/os/"
+    
     result = ssh.sudo("dnf repolist | grep beaker- | wc -l")
     if result.exit_status == 0 and int(result.stdout.strip()) >= 12:
         logger.info("installing EPEL release for RHEL %s", rhel_version)
-        ssh.sudo(f"dnf install https://dl.fedoraproject.org/pub/epel/epel-release-latest-{main_rhel_version}.noarch.rpm -y --transient")
+        ssh.sudo(cmd_epel)
     else:
       logger.info("installing Beaker repositories and EPEL release for RHEL %s", rhel_version)
-      ssh.sudo(f"dnf config-manager --add-repo http://download.eng.rdu.redhat.com/released/rhel-{main_rhel_version}/RHEL-{main_rhel_version}/{rhel_version}.0/AppStream/aarch64/os/ --transient")
-      ssh.sudo(f"dnf config-manager --add-repo http://download.eng.rdu.redhat.com/released/rhel-{main_rhel_version}/RHEL-{main_rhel_version}/{rhel_version}.0/BaseOS/aarch64/os/ --transient")
-      ssh.sudo(f"dnf install https://dl.fedoraproject.org/pub/epel/epel-release-latest-{main_rhel_version}.noarch.rpm -y --transient")
+      for attempt in range(1, 4):
+          try:
+              ssh.sudo(cmd_appstream)
+              ssh.sudo(cmd_baseos)
+              ssh.sudo(cmd_epel)
+              break
+          except Exception as e:
+              if attempt < 3:
+                  logger.warning("DNF operation failed (attempt %s/3): %s, retrying...", attempt, e)
+                  time.sleep(5)
+              else:
+                  raise
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -132,7 +164,6 @@ def hardware_info_session():
     """
     Collect hardware and system info from the Jetson via SSH at session start.
     Sets module-level variables and prints SETUP summary for each pytest run.
-    Also installs Beaker repository on the Jetson.
     """
     with SSHConnection(
         JETSON_HOST,
@@ -183,6 +214,13 @@ def hardware_info_session():
     print("=" * 60 + "\n")
     yield
 
+
+@pytest.fixture(scope="session", autouse=True)
+def beaker_repo_session(hardware_info_session):
+    """
+    Install Beaker repositories on the Jetson after hardware info is collected.
+    Depends on hardware_info_session to ensure RHEL_VERSION is available.
+    """
     with SSHConnection(
         JETSON_HOST,
         JETSON_USERNAME,
@@ -192,6 +230,7 @@ def hardware_info_session():
         key_filename=key_path,
     ) as ssh:
         install_beaker_repo(ssh, RHEL_VERSION)
+    yield
 
 @pytest.fixture(scope="class")
 def ssh():

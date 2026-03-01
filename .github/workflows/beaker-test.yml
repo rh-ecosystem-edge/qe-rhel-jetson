@@ -195,6 +195,7 @@ jobs:
       #========================================================================
       - name: Reserve Jetson via Beaker
         id: reserve
+        timeout-minutes: 20
         env:
           BEAKER_HUB_URL: ${{ env.BEAKER_HUB_URL }}
           BEAKER_SSL_VERIFY: ${{ env.BEAKER_SSL_VERIFY }}
@@ -226,6 +227,7 @@ jobs:
           echo "target=$TARGET" >> $GITHUB_OUTPUT
 
       - name: Verify SSH connectivity
+        timeout-minutes: 10
         run: |
           TARGET="${{ steps.reserve.outputs.target }}"
           echo "🔌 Verifying SSH connection to $TARGET..."
@@ -262,6 +264,7 @@ jobs:
 
       - name: Install bootc via Ansible
         if: ${{ !github.event.inputs.skip_bootc_install }}
+        timeout-minutes: 45
         run: |
           cd beaker/ansible
           
@@ -280,6 +283,7 @@ jobs:
 
       - name: Wait for reboot after bootc install
         if: ${{ !github.event.inputs.skip_bootc_install }}
+        timeout-minutes: 15
         run: |
           TARGET="${{ steps.reserve.outputs.target }}"
           echo "⏳ Waiting for system to come back up after bootc install..."
@@ -311,6 +315,7 @@ jobs:
       #========================================================================
       - name: Run Jetson Tests
         id: tests
+        timeout-minutes: 60
         env:
           JETSON_HOST: ${{ steps.reserve.outputs.target }}
           JETSON_USERNAME: root

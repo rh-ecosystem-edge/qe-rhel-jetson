@@ -343,7 +343,7 @@ def main():
             print(f"   SSH accessible as root")
             print(f"\n📝 Next steps:")
             print(f"   Run Ansible playbook to install bootc:")
-            print(f"      Read qe-rhel-jetson/beaker/README.md Quick Start section")
+            print(f"      GO TO qe-rhel-jetson/beaker/README.md step 3: Set Up Ansible Vault ")
         else:
             print(f"\n❌ FAILED: Could not establish SSH connection to {args.target}")
             print(f"   after waiting {args.ssh_timeout} minutes.")

@@ -28,7 +28,7 @@ class TestUSBs:
         Check if the amount of controllers with the same spec values present as amount of lines in lsusb output.
         """
         spec = _conftest.get_hardware_spec(_conftest.HARDWARE_MODEL_NAME)
-        ssh.sudo("dnf install usbutils -y --transient")  # for lsusb cli tool
+        ssh.sudo("dnf install usbutils -y")  # for lsusb cli tool
         usbs = spec.get("usbs")
 
         # Group by (ports, capable_speed): count controllers (keys) with same spec
