@@ -633,3 +633,84 @@
           {{ installed_packages.stdout }}
           ========================================
       tags: [verify]
+
+    #=========================================================================
+    # Step 16: Final Reboot (to load kernel modules)
+    #=========================================================================
+    - name: Set RHEL first in boot order before reboot
+      ansible.builtin.command:
+        cmd: "efibootmgr -o {{ ([rhel_boot_entry] + (original_boot_order.split(',') | reject('equalto', rhel_boot_entry) | list)) | join(',') }}"
+      when:
+        - auto_reboot
+        - rhel_boot_entry | length > 0
+      tags: [reboot]
+
+    - name: Reboot the system to load kernel modules
+      ansible.builtin.reboot:
+        reboot_timeout: 600
+        msg: "Rebooting to load NVIDIA kernel modules"
+      when: auto_reboot
+      tags: [reboot]
+
+    - name: Wait for system to be ready after reboot
+      ansible.builtin.wait_for_connection:
+        delay: 30
+        timeout: 300
+      when: auto_reboot
+      tags: [reboot]
+
+    - name: Restore original boot order (PXE first for Beaker)
+      ansible.builtin.command:
+        cmd: "efibootmgr -o {{ original_boot_order }}"
+      when:
+        - auto_reboot
+        - original_boot_order is defined
+      tags: [reboot]
+
+    - name: Verify boot order restored
+      ansible.builtin.command:
+        cmd: efibootmgr
+      register: final_boot_order
+      when: auto_reboot
+      tags: [reboot]
+
+    - name: Display final boot order
+      ansible.builtin.debug:
+        msg: |
+          Boot order restored to: {{ final_boot_order.stdout_lines | select('match', '^BootOrder:') | first | default('unknown') }}
+      when: auto_reboot
+      tags: [reboot]
+
+    - name: Verify NVIDIA kernel modules loaded
+      ansible.builtin.command:
+        cmd: lsmod
+      register: lsmod_output
+      when: auto_reboot
+      tags: [reboot]
+
+    - name: Display loaded NVIDIA modules
+      ansible.builtin.debug:
+        msg: |
+          NVIDIA kernel modules loaded:
+          {{ lsmod_output.stdout_lines | select('match', '^nv') | list | join('\n') }}
+      when: auto_reboot
+      tags: [reboot]
+
+    - name: Final verification - nvidia-smi
+      ansible.builtin.command:
+        cmd: nvidia-smi -L
+      register: final_nvidia_smi
+      when: auto_reboot
+      failed_when: false
+      tags: [reboot]
+
+    - name: Display final GPU status
+      ansible.builtin.debug:
+        msg: |
+          ========================================
+          Installation Complete - System Ready!
+          ========================================
+          GPU: {{ final_nvidia_smi.stdout | default('nvidia-smi not available') }}
+          ========================================
+      when: auto_reboot
+      tags: [reboot]
