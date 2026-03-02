@@ -85,8 +85,8 @@ class TestDisplay:
     def test_wayland_socket_or_server(self, ssh):
         """Test Wayland socket or compositor binary available (optional on headless)."""
         
-        socket_result = ssh.run("ls /run/user/*/wayland-*")
-        which_result = ssh.run("which weston || which Xwayland || which xrandr")
+        socket_result = ssh.run("ls /run/user/*/wayland-*", fail_on_rc=False)
+        which_result = ssh.run("which weston || which Xwayland || which xrandr", fail_on_rc=False)
         has_socket = socket_result.exit_status == 0 and socket_result.stdout.strip()
         has_binary = which_result.exit_status == 0 and which_result.stdout.strip()
         if not (has_socket or has_binary):

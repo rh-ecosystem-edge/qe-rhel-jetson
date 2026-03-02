@@ -38,7 +38,7 @@ class TestCSICamera:
         """Test CSI camera device nodes are present.
         Checks for /dev/video* nodes created by the videodev module. """
         
-        result = ssh.run("ls -la /dev/video*")
+        result = ssh.run("ls -la /dev/video*", fail_on_rc=False)
         # TODO: Convert to assert once MIPI/CSI2 camera support is confirmed for the target RHEL version
         #       (see Known Issue #1 above).
         if result.exit_status != 0:

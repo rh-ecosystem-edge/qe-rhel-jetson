@@ -67,5 +67,5 @@ class TestTools:
         which_result = ssh.run("which nvfancontrol")
         if not which_result.stdout.strip():
             pytest.skip("nvfancontrol not in PATH")
-        result = ssh.run("nvfancontrol -q")
+        result = ssh.sudo("nvfancontrol -q")
         assert result.exit_status == 0, f"nvfancontrol failed: {result.stderr}"
