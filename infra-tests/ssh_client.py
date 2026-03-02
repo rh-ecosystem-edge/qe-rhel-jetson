@@ -2,13 +2,15 @@
 SSH client infrastructure for Jetson RPM tests using paramiko.
 Based on test_basic_locally.py from edge-ai-image-pipelines.
 """
+
 import logging
 import socket
 import time
 import paramiko
 from pathlib import Path
 from typing import Optional
-from tests import conftest as _conftest 
+from tests import conftest as _conftest
+
 logger = logging.getLogger(__name__)
 
 
@@ -37,7 +39,11 @@ class SSHConnection:
         """
         logger.info(
             "[SSH debug] Connecting: host=%s port=%s user=%s timeout=%ss key=%s",
-            hostname, port, username, timeout, key_filename or "password",
+            hostname,
+            port,
+            username,
+            timeout,
+            key_filename or "password",
         )
 
         self.password = password
@@ -69,7 +75,9 @@ class SSHConnection:
             self.client = paramiko.SSHClient()
             self.client.set_missing_host_key_policy(paramiko.WarningPolicy())
             try:
-                logger.info("[SSH debug] Step 2: Paramiko connect (attempt %s/3) ...", attempt)
+                logger.info(
+                    "[SSH debug] Step 2: Paramiko connect (attempt %s/3) ...", attempt
+                )
                 self.client.connect(**connect_kw)
                 logger.info("[SSH debug] Step 2: Paramiko connect OK")
                 last_error = None
@@ -84,7 +92,11 @@ class SSHConnection:
                 if attempt < 3:
                     time.sleep(2)
         if last_error is not None:
-            logger.error("[SSH debug] Step 2 FAILED (Paramiko) after 3 attempts: %s", last_error, exc_info=True)
+            logger.error(
+                "[SSH debug] Step 2 FAILED (Paramiko) after 3 attempts: %s",
+                last_error,
+                exc_info=True,
+            )
             raise last_error
         try:
             logger.info("[SSH debug] Step 3: open_sftp() ...")
@@ -95,28 +107,37 @@ class SSHConnection:
             try:
                 self.client.close()
             except Exception as cleanup_error:
-                logger.warning("[SSH debug] Failed to close SSH client during SFTP cleanup: %s", cleanup_error)
+                logger.warning(
+                    "[SSH debug] Failed to close SSH client during SFTP cleanup: %s",
+                    cleanup_error,
+                )
             raise
-    
-    def run(self, command: str, timeout: Optional[int] = None, fail_on_rc: bool = True, print_output: bool = True):
+
+    def run(
+        self,
+        command: str,
+        timeout: Optional[int] = None,
+        fail_on_rc: bool = True,
+        print_output: bool = True,
+    ):
         """
         Run a command and return result with stdout attribute.
-        
+
         Args:
             command: Command to execute
             timeout: Optional timeout in seconds
-            
+
         Returns:
             Result object with stdout and exit_status attributes
         """
         MUTATING_DNF_COMMANDS = [
-            "install", 
-            "remove", 
-            "update", 
-            "upgrade", 
-            "dist-sync", 
-            "group", 
-            "config-manager"
+            "install",
+            "remove",
+            "update",
+            "upgrade",
+            "dist-sync",
+            "group",
+            "config-manager",
         ]
         # if bootc is available, add --transient to the dnf commands
         if _conftest.BOOTC_AVAILABLE:
@@ -130,24 +151,35 @@ class SSHConnection:
             print("\t\tRunning command:", command)
         stdin, stdout, stderr = self.client.exec_command(command, timeout=timeout)
         exit_status = stdout.channel.recv_exit_status()
-        output = stdout.read().decode('utf-8')
-        error_output = stderr.read().decode('utf-8')
-        
+        output = stdout.read().decode("utf-8")
+        error_output = stderr.read().decode("utf-8")
+
         # Create a result-like object similar to Fabric's result
-        result = type('Result', (), {
-            'stdout': output,
-            'stderr': error_output,
-            'exit_status': exit_status,
-            'ok': exit_status == 0
-        })()
+        result = type(
+            "Result",
+            (),
+            {
+                "stdout": output,
+                "stderr": error_output,
+                "exit_status": exit_status,
+                "ok": exit_status == 0,
+            },
+        )()
         if print_output:
             print("\t\tstdout:", result.stdout)
         return result
-    
-    def sudo(self, command: str, timeout: Optional[int] = None, fail_on_rc: bool = True, expect_rc: Optional[int] = 0, print_output: bool = True):
+
+    def sudo(
+        self,
+        command: str,
+        timeout: Optional[int] = None,
+        fail_on_rc: bool = True,
+        expect_rc: Optional[int] = 0,
+        print_output: bool = True,
+    ):
         """
         Run a command with sudo.
-        
+
         Args:
             command: Command to execute with sudo
             timeout: Optional timeout in seconds
@@ -156,40 +188,46 @@ class SSHConnection:
         Returns:
             Result object with stdout and exit_status attributes
         """
-        result = self.run(f"echo {self.password} | sudo -S {command}", timeout=timeout, print_output=print_output)
+        result = self.run(
+            f"echo {self.password} | sudo -S {command}",
+            timeout=timeout,
+            print_output=print_output,
+        )
         if fail_on_rc and result.exit_status != expect_rc:
-            raise RuntimeError(f"Command '{command}' failed with exit status {result.exit_status}. Expected {expect_rc}. Error: {result.stderr}. \n\t\tOutput: {result.stdout}")
+            raise RuntimeError(
+                f"Command '{command}' failed with exit status {result.exit_status}. Expected {expect_rc}. Error: {result.stderr}. \n\t\tOutput: {result.stdout}"
+            )
         return result
-    
+
     def put(self, local_path: Path, remote_path: str):
         """
         Upload a file to remote host.
-        
+
         Args:
             local_path: Local file path (Path object or string)
             remote_path: Remote file path
         """
         self.sftp.put(str(local_path), remote_path)
-    
+
     def get(self, remote_path: str, local_path: Path):
         """
         Download a file from remote host.
-        
+
         Args:
             remote_path: Remote file path
             local_path: Local file path (Path object or string)
         """
         self.sftp.get(remote_path, str(local_path))
-    
+
     def close(self):
         """Close SSH connection."""
-        if hasattr(self, 'sftp') and self.sftp:
+        if hasattr(self, "sftp") and self.sftp:
             self.sftp.close()
-        if hasattr(self, 'client') and self.client:
+        if hasattr(self, "client") and self.client:
             self.client.close()
-    
+
     def __enter__(self):
         return self
-    
+
     def __exit__(self, *args):
         self.close()
