@@ -93,13 +93,13 @@ def collect(ssh) -> dict[str, Any]:
     }
 
     # 1. RHEL version
-    rhel = _run(ssh, "cat /etc/redhat-release 2>/dev/null")
+    rhel = _run(ssh, "cat /etc/redhat-release")
     rhel_number = _parse_decimal(rhel)
     out["rhel_version"] = rhel_number if rhel_number else None
 
     # 2. Jetpack version (from /etc/nv_tegra_release or similar on Jetson)
     # Target: 2-dot version X.Y.Z (e.g. R32 + REVISION: 7.1 -> "32.7.1"); stored as str since float cannot hold two dots.
-    jetpack_raw = _run(ssh, "head -n 1 /etc/nv_tegra_release 2>/dev/null")
+    jetpack_raw = _run(ssh, "head -n 1 /etc/nv_tegra_release")
     if jetpack_raw:
         r_match = re.search(r"R(\d+)(?:\.(\d+))?", jetpack_raw)
         rev_match = re.search(r"REVISION:\s*([\d.]+)", jetpack_raw)
@@ -130,7 +130,7 @@ def collect(ssh) -> dict[str, Any]:
             out["jetpack_version"] = _parse_decimal(jetpack_raw)
 
     # 3 & 4. Firmware version and type (dmidecode may need sudo)
-    dmidecode = _run_sudo(ssh, "dmidecode -t bios 2>/dev/null")
+    dmidecode = _run_sudo(ssh, "dmidecode -t bios")
     if dmidecode:
         ver_match = re.search(r"Version:\s*(.+)", dmidecode, re.MULTILINE | re.IGNORECASE)
         if ver_match:
@@ -146,9 +146,9 @@ def collect(ssh) -> dict[str, Any]:
         out["firmware_type"] = efi_check if efi_check else None
 
     # 5. Hardware model name (devicetree on ARM, else dmidecode)
-    model = _run(ssh, "cat /sys/firmware/devicetree/base/model 2>/dev/null | tr -d '\\0'")
+    model = _run(ssh, "cat /sys/firmware/devicetree/base/model | tr -d '\\0'")
     if not model:
-        sysinfo = _run_sudo(ssh, "dmidecode -t system 2>/dev/null")
+        sysinfo = _run_sudo(ssh, "dmidecode -t system")
         if sysinfo:
             m = re.search(r"Product Name:\s*(.+)", sysinfo, re.MULTILINE | re.IGNORECASE)
             if m:
@@ -164,14 +164,14 @@ def collect(ssh) -> dict[str, Any]:
     out["cpu_arch"] = arch if arch else None
 
     # 8–10. Bootc / rpm-ostree (bootc_available defaults False)
-    bootc_which = _run(ssh, "which bootc 2>/dev/null")
-    rpm_ostree_which = _run(ssh, "which rpm-ostree 2>/dev/null")
+    bootc_which = _run(ssh, "which bootc")
+    rpm_ostree_which = _run(ssh, "which rpm-ostree")
     out["bootc_available"] = bool(bootc_which or rpm_ostree_which)
     if out["bootc_available"]:
-        ver_out = _run(ssh, "bootc --version 2>/dev/null")
+        ver_out = _run(ssh, "bootc --version")
         if ver_out:
             out["bootc_version"] = _parse_decimal(ver_out)
-        status_out = _run(ssh, "rpm-ostree status 2>/dev/null")
+        status_out = _run(ssh, "rpm-ostree status")
         if status_out:
             # Try to extract image version (e.g. line with Version: or similar)
             img_ver_match = re.search(r"(?:Version)\s*[:\s]+\s*(\S+.*?)(?:\s*$|\n)", status_out, re.MULTILINE | re.IGNORECASE)
