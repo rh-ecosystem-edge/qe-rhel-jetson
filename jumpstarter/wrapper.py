@@ -7,16 +7,14 @@ import subprocess
 import importlib
 from pathlib import Path
 
-project_root = Path(__file__).parent.parent
-ssh_client_path = project_root / "infra-tests" / "ssh_client.py"
-spec = importlib.util.spec_from_file_location("ssh_client", ssh_client_path)
-ssh_client_module = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(ssh_client_module)
-SSHConnection = ssh_client_module.SSHConnection
 
-# FIXME
-USERNAME = "admin"
-PASSWORD = "password"
+USERNAME = os.environ.get("JETSON_USERNAME")
+PASSWORD = os.environ.get("JETSON_PASSWORD")
+
+if USERNAME is None or PASSWORD is None:
+    raise ValueError(
+        "JETSON_USERNAME and JETSON_PASSWORD must be set when running tests over jumpstarter"
+    )
 
 with env() as client:
     with client.log_stream():
@@ -38,8 +36,13 @@ with env() as client:
             os.environ["JETSON_HOST"] = addr[0]
             os.environ["JETSON_PORT"] = str(addr[1])
 
-            os.environ["JETSON_USERNAME"] = USERNAME
-            os.environ["JETSON_PASSWORD"] = PASSWORD
+            project_root = Path(__file__).parent.parent
+            sys.path.insert(0, str(project_root))
+            ssh_client_path = project_root / "infra-tests" / "ssh_client.py"
+            spec = importlib.util.spec_from_file_location("ssh_client", ssh_client_path)
+            ssh_client_module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(ssh_client_module)
+            SSHConnection = ssh_client_module.SSHConnection
 
             with SSHConnection(
                 addr[0],
