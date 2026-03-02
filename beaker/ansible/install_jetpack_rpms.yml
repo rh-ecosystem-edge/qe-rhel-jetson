@@ -70,6 +70,7 @@
       - podman
       - can-utils
       - usbutils
+      - pciutils
 
     # Optional X11 packages (set install_x11=true to install)
     x11_packages:
@@ -89,6 +90,28 @@
     install_x11: false
 
   pre_tasks:
+    - name: Include vault secrets if available
+      ansible.builtin.include_vars:
+        file: vars/secrets.yml
+      failed_when: false
+      delegate_to: localhost
+      run_once: true
+
+    - name: Detect RHEL version from /etc/redhat-release
+      ansible.builtin.shell: |
+        if [ -f /etc/redhat-release ]; then
+          grep -oP '\d+\.\d+' /etc/redhat-release | head -1
+        else
+          echo "9.7"
+        fi
+      register: detected_rhel_version
+      changed_when: false
+
+    - name: Set RHEL version facts
+      ansible.builtin.set_fact:
+        rhel_version: "{{ ansible_distribution_version | default(detected_rhel_version.stdout | trim) }}"
+        rhel_major_version: "{{ ansible_distribution_major_version | default(detected_rhel_version.stdout.split('.')[0] | trim) }}"
+
     - name: Display target information
       ansible.builtin.debug:
         msg: |
@@ -96,8 +119,8 @@
           JetPack RPM Installation Starting
           ========================================
           Target:   {{ inventory_hostname }} ({{ ansible_host | default(inventory_hostname) }})
-          OS:       {{ ansible_distribution | default('unknown') }} {{ ansible_distribution_version | default('') }}
-          Arch:     {{ ansible_architecture | default('unknown') }}
+          OS:       {{ ansible_distribution | default('RHEL') }} {{ rhel_version }}
+          Arch:     {{ ansible_architecture | default('aarch64') }}
           Repo:     {{ jetpack_repo_id }}
           ========================================
 
@@ -110,7 +133,7 @@
       register: subscription_status
       changed_when: false
       failed_when: false
-      when: not skip_subscription
+      when: not (skip_subscription | bool)
       tags: [subscription]
 
     - name: Register with Red Hat subscription
@@ -129,7 +152,7 @@
     - name: Display subscription registration result
       ansible.builtin.debug:
         msg: "{{ subscription_result.stdout | default('Already registered or skipped') }}"
-      when: not skip_subscription
+      when: not (skip_subscription | bool)
       tags: [subscription]
 
     - name: Handle subscription UUID error (if needed)
@@ -323,7 +346,7 @@
       ansible.builtin.command:
         cmd: >
           dnf config-manager --add-repo
-          http://download.eng.rdu.redhat.com/released/rhel-{{ ansible_distribution_major_version }}/RHEL-{{ ansible_distribution_major_version }}/{{ ansible_distribution_version }}.0/AppStream/aarch64/os/
+          http://download.eng.rdu.redhat.com/released/rhel-{{ rhel_major_version }}/RHEL-{{ rhel_major_version }}/{{ rhel_version }}.0/AppStream/aarch64/os/
       register: appstream_repo_result
       changed_when: appstream_repo_result.rc == 0
       failed_when: false
@@ -333,7 +356,7 @@
       ansible.builtin.command:
         cmd: >
           dnf config-manager --add-repo
-          http://download.eng.rdu.redhat.com/released/rhel-{{ ansible_distribution_major_version }}/RHEL-{{ ansible_distribution_major_version }}/{{ ansible_distribution_version }}.0/BaseOS/aarch64/os/
+          http://download.eng.rdu.redhat.com/released/rhel-{{ rhel_major_version }}/RHEL-{{ rhel_major_version }}/{{ rhel_version }}.0/BaseOS/aarch64/os/
       register: baseos_repo_result
       changed_when: baseos_repo_result.rc == 0
       failed_when: false
@@ -341,7 +364,7 @@
 
     - name: Install EPEL repository (required for can-utils)
       ansible.builtin.dnf:
-        name: "https://dl.fedoraproject.org/pub/epel/epel-release-latest-{{ ansible_distribution_major_version }}.noarch.rpm"
+        name: "https://dl.fedoraproject.org/pub/epel/epel-release-latest-{{ rhel_major_version }}.noarch.rpm"
         state: present
         disable_gpg_check: true
       failed_when: false
@@ -358,7 +381,7 @@
       ansible.builtin.dnf:
         name: "{{ x11_packages }}"
         state: present
-      when: install_x11
+      when: install_x11 | bool
       failed_when: false
       tags: [install]
 
@@ -368,7 +391,7 @@
     - name: Set default target to graphical
       ansible.builtin.command:
         cmd: systemctl set-default graphical.target
-      when: enable_graphical_target
+      when: enable_graphical_target | bool
       register: graphical_target_result
       changed_when: "'Created symlink' in graphical_target_result.stdout or graphical_target_result.rc == 0"
       failed_when: false
@@ -417,7 +440,7 @@
               efibootmgr -o "$BOOT_ORDER"
               echo "Boot order restored to: $BOOT_ORDER"
           fi
-      when: setup_boot_restore
+      when: setup_boot_restore | bool
       tags: [restore]
 
     - name: Create boot restoration systemd service
@@ -434,7 +457,7 @@
 
           [Install]
           WantedBy=multi-user.target
-      when: setup_boot_restore
+      when: setup_boot_restore | bool
       tags: [restore]
 
     - name: Create boot restoration timer
@@ -451,13 +474,13 @@
 
           [Install]
           WantedBy=timers.target
-      when: setup_boot_restore
+      when: setup_boot_restore | bool
       tags: [restore]
 
     - name: Reload systemd daemon
       ansible.builtin.systemd:
         daemon_reload: true
-      when: setup_boot_restore
+      when: setup_boot_restore | bool
       tags: [restore]
 
     - name: Enable and start boot restoration timer
@@ -465,7 +488,7 @@
         name: restore-bootorder.timer
         enabled: true
         state: started
-      when: setup_boot_restore
+      when: setup_boot_restore | bool
       tags: [restore]
 
     #=========================================================================
@@ -475,13 +498,13 @@
       ansible.builtin.reboot:
         reboot_timeout: 600
         msg: "Rebooting after JetPack RPM installation"
-      when: auto_reboot
+      when: auto_reboot | bool
       tags: [reboot]
 
     - name: Wait for system to be accessible
       ansible.builtin.wait_for_connection:
         timeout: 300
-      when: auto_reboot
+      when: auto_reboot | bool
       tags: [reboot]
 
    
@@ -550,26 +573,26 @@
       register: nvpmodel_status
       changed_when: false
       failed_when: false
-      when: set_max_performance
+      when: set_max_performance | bool
       tags: [performance]
 
     - name: Display current nvpmodel status
       ansible.builtin.debug:
         var: nvpmodel_status.stdout_lines
-      when: set_max_performance and nvpmodel_status.stdout is defined
+      when: set_max_performance | bool and nvpmodel_status.stdout is defined
       tags: [performance]
 
     - name: Set nvpmodel to maximum performance (mode 0)
       ansible.builtin.command:
         cmd: nvpmodel -m 0
-      when: set_max_performance
+      when: set_max_performance | bool
       failed_when: false
       tags: [performance]
 
     - name: Set CPU and GPU clock speeds to maximum
       ansible.builtin.command:
         cmd: jetson_clocks
-      when: set_max_performance
+      when: set_max_performance | bool
       failed_when: false
       tags: [performance]
 
@@ -647,14 +670,14 @@
       ansible.builtin.reboot:
         reboot_timeout: 600
         msg: "Rebooting to load NVIDIA kernel modules"
-      when: auto_reboot
+      when: auto_reboot | bool
       tags: [reboot]
 
     - name: Wait for system to be ready after reboot
       ansible.builtin.wait_for_connection:
         delay: 30
         timeout: 300
-      when: auto_reboot
+      when: auto_reboot | bool
       tags: [reboot]
 
     - name: Restore original boot order (PXE first for Beaker)
@@ -669,21 +692,21 @@
       ansible.builtin.command:
         cmd: efibootmgr
       register: final_boot_order
-      when: auto_reboot
+      when: auto_reboot | bool
       tags: [reboot]
 
     - name: Display final boot order
       ansible.builtin.debug:
         msg: |
           Boot order restored to: {{ final_boot_order.stdout_lines | select('match', '^BootOrder:') | first | default('unknown') }}
-      when: auto_reboot
+      when: auto_reboot | bool
       tags: [reboot]
 
     - name: Verify NVIDIA kernel modules loaded
       ansible.builtin.command:
         cmd: lsmod
       register: lsmod_output
-      when: auto_reboot
+      when: auto_reboot | bool
       tags: [reboot]
 
     - name: Display loaded NVIDIA modules
@@ -691,14 +714,14 @@
         msg: |
           NVIDIA kernel modules loaded:
           {{ lsmod_output.stdout_lines | select('match', '^nv') | list | join('\n') }}
-      when: auto_reboot
+      when: auto_reboot | bool
       tags: [reboot]
 
     - name: Final verification - nvidia-smi
       ansible.builtin.command:
         cmd: nvidia-smi -L
       register: final_nvidia_smi
-      when: auto_reboot
+      when: auto_reboot | bool
       failed_when: false
       tags: [reboot]
 
@@ -710,7 +733,7 @@
           ========================================
           GPU: {{ final_nvidia_smi.stdout | default('nvidia-smi not available') }}
           ========================================
-      when: auto_reboot
+      when: auto_reboot | bool
       tags: [reboot]
     #=========================================================================
     # Step 18: Restore Boot Order After Reboot
@@ -718,5 +741,5 @@
     - name: Restore original boot order
       ansible.builtin.command:
         cmd: "efibootmgr -o {{ original_boot_order }}"
-      when: auto_reboot
+      when: auto_reboot | bool
       tags: [boot]

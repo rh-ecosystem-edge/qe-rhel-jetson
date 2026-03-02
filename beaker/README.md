@@ -97,8 +97,12 @@ ansible-vault create vars/secrets.yml
 # Write:
 # registry_user: "Your Name"
 # registry_pass: "glpat-your-personal-gitlab-token"
+# rhsm_username: "rh-ee-youruser"
+# rhsm_password: "your_kerberos_password"
 ```
-for changing the current vars: 
+
+For changing the current vars:
+
 ```bash
 cd ansible
 ansible-vault edit vars/secrets.yml
@@ -139,6 +143,16 @@ ansible-playbook -i inventory.yml install_jetpack_rpms.yml \
   -e "target_host=${JETSON_HOST}" \
   -e "rhsm_username=rh-ee-youruser" \
   -e "rhsm_password=your_kerberos_password"
+```
+
+**Using ansible-vault for subscription credentials (recommended):**
+
+You can store `rhsm_username` and `rhsm_password` in `vars/secrets.yml` (see Step 3) and use:
+
+```bash
+ansible-playbook -i inventory.yml install_jetpack_rpms.yml \
+  -e "target_host=${JETSON_HOST}" \
+  --ask-vault-pass
 ```
 
 **Skip subscription (if already registered):**
