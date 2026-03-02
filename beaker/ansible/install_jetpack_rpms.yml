@@ -63,11 +63,7 @@
     # NVIDIA Container Toolkit repository
     nvidia_container_toolkit_repo: "https://nvidia.github.io/libnvidia-container/stable/rpm/nvidia-container-toolkit.repo"
 
-    # Packages to install
-    jetpack_packages:
-      - nvidia-jetpack-all
-      - nvidia-jetpack-kmod
-      - nvidia-container-toolkit
+    
 
     # Additional packages required for testing
     additional_packages:
@@ -88,8 +84,8 @@
     # Optional features
     skip_subscription: false
     set_max_performance: false
-    enable_graphical_target: true
-    regenerate_initramfs: true
+    enable_graphical_target: false
+   
     install_x11: false
 
   pre_tasks:
@@ -308,24 +304,44 @@
           Container toolkit changed: {{ toolkit_install_result.changed }}
       tags: [install]
 
-    - name: Run depmod to register kernel modules
-      ansible.builtin.command:
-        cmd: depmod -a
-      when: install_result.changed
-      tags: [install]
+  #  - name: Run depmod to register kernel modules
+  #    ansible.builtin.command:
+  #      cmd: depmod -a
+  #    when: install_result.changed
+  #    tags: [install]
 
-    - name: Load nvmap kernel module
-      ansible.builtin.command:
-        cmd: modprobe nvmap
-      failed_when: false
-      tags: [install]
+  #  - name: Load nvmap kernel module
+  #    ansible.builtin.command:
+  #      cmd: modprobe nvmap
+  #    failed_when: false
+  #    tags: [install]
 
     #=========================================================================
     # Step 7: Install additional packages for testing
     #=========================================================================
+    - name: Add RHEL AppStream repository
+      ansible.builtin.command:
+        cmd: >
+          dnf config-manager --add-repo
+          http://download.eng.rdu.redhat.com/released/rhel-{{ ansible_distribution_major_version }}/RHEL-{{ ansible_distribution_major_version }}/{{ ansible_distribution_version }}.0/AppStream/aarch64/os/
+      register: appstream_repo_result
+      changed_when: appstream_repo_result.rc == 0
+      failed_when: false
+      tags: [install]
+
+    - name: Add RHEL BaseOS repository
+      ansible.builtin.command:
+        cmd: >
+          dnf config-manager --add-repo
+          http://download.eng.rdu.redhat.com/released/rhel-{{ ansible_distribution_major_version }}/RHEL-{{ ansible_distribution_major_version }}/{{ ansible_distribution_version }}.0/BaseOS/aarch64/os/
+      register: baseos_repo_result
+      changed_when: baseos_repo_result.rc == 0
+      failed_when: false
+      tags: [install]
+
     - name: Install EPEL repository (required for can-utils)
       ansible.builtin.dnf:
-        name: "https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm"
+        name: "https://dl.fedoraproject.org/pub/epel/epel-release-latest-{{ ansible_distribution_major_version }}.noarch.rpm"
         state: present
         disable_gpg_check: true
       failed_when: false
@@ -358,19 +374,8 @@
       failed_when: false
       tags: [config]
 
-    - name: Regenerate initramfs with dracut
-      ansible.builtin.command:
-        cmd: dracut -vf
-      when: regenerate_initramfs
-      register: dracut_result
-      changed_when: dracut_result.rc == 0
-      tags: [config]
 
-    - name: Display initramfs regeneration status
-      ansible.builtin.debug:
-        msg: "initramfs regenerated successfully"
-      when: regenerate_initramfs and dracut_result.rc == 0
-      tags: [config]
+   
 
     #=========================================================================
     # Step 9: Reorder EFI Boot Entries (RHEL first)
@@ -479,17 +484,10 @@
       when: auto_reboot
       tags: [reboot]
 
-    #=========================================================================
-    # Step 11: Restore Boot Order After Reboot
-    #=========================================================================
-    - name: Restore original boot order
-      ansible.builtin.command:
-        cmd: "efibootmgr -o {{ original_boot_order }}"
-      when: auto_reboot
-      tags: [boot]
+   
 
     #=========================================================================
-    # Step 12: Generate NVIDIA CDI Specification
+    # Step 11: Generate NVIDIA CDI Specification
     #=========================================================================
     - name: Create CDI directory
       ansible.builtin.file:
@@ -511,7 +509,7 @@
       tags: [cdi]
 
     #=========================================================================
-    # Step 13: Create NVIDIA CDI Systemd Service
+    # Step 12: Create NVIDIA CDI Systemd Service
     #=========================================================================
     - name: Create nvidia-cdi systemd service
       ansible.builtin.copy:
@@ -544,7 +542,7 @@
       tags: [cdi]
 
     #=========================================================================
-    # Step 14: Set Maximum Performance (Optional)
+    # Step 15: Set Maximum Performance (Optional)
     #=========================================================================
     - name: Query current nvpmodel status
       ansible.builtin.command:
@@ -576,7 +574,7 @@
       tags: [performance]
 
     #=========================================================================
-    # Step 15: Verify Installation
+    # Step 16: Verify Installation
     #=========================================================================
     - name: Check Tegra release information
       ansible.builtin.command:
@@ -635,7 +633,7 @@
       tags: [verify]
 
     #=========================================================================
-    # Step 16: Final Reboot (to load kernel modules)
+    # Step 17: Final Reboot (to load kernel modules)
     #=========================================================================
     - name: Set RHEL first in boot order before reboot
       ansible.builtin.command:
@@ -714,3 +712,11 @@
           ========================================
       when: auto_reboot
       tags: [reboot]
+    #=========================================================================
+    # Step 18: Restore Boot Order After Reboot
+    #=========================================================================
+    - name: Restore original boot order
+      ansible.builtin.command:
+        cmd: "efibootmgr -o {{ original_boot_order }}"
+      when: auto_reboot
+      tags: [boot]

@@ -27,7 +27,8 @@ beaker/
 │   └── reserve_jetson.py  # Submit Beaker job for Jetson
 │
 ├── ansible/               # Ansible playbooks
-│   ├── install_bootc.yml  # Main bootc deployment playbook
+│   ├── install_bootc.yml  # Bootc image deployment playbook
+│   ├── install_jetpack_rpms.yml  # JetPack RPM installation playbook
 │   ├── inventory.yml      # Target hosts
 │   ├── ansible.cfg        # Ansible configuration
 │   └── vars/
@@ -119,7 +120,71 @@ ansible-playbook -i inventory.yml install_bootc.yml --ask-vault-pass \
 -e "reservation_hours=${RESERVATION_HOURS}"
 ```
 
-### 5. Run Tests
+### 5. Deploy JetPack RPMs (Alternative to Bootc)
+
+Instead of deploying a bootc image, you can install JetPack RPMs directly on a freshly provisioned RHEL system.
+
+**Basic usage:**
+
+```bash
+cd ansible
+ansible-playbook -i inventory.yml install_jetpack_rpms.yml \
+  -e "target_host=${JETSON_HOST}"
+```
+
+**With Red Hat subscription credentials:**
+
+```bash
+ansible-playbook -i inventory.yml install_jetpack_rpms.yml \
+  -e "target_host=${JETSON_HOST}" \
+  -e "rhsm_username=rh-ee-youruser" \
+  -e "rhsm_password=your_kerberos_password"
+```
+
+**Skip subscription (if already registered):**
+
+```bash
+ansible-playbook -i inventory.yml install_jetpack_rpms.yml \
+  -e "target_host=${JETSON_HOST}" \
+  -e "skip_subscription=true"
+```
+
+**Available options:**
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `target_host` | (required) | Target Jetson FQDN |
+| `rhsm_username` | - | Red Hat subscription username |
+| `rhsm_password` | - | Red Hat subscription password |
+| `skip_subscription` | `false` | Skip subscription registration |
+| `auto_reboot` | `true` | Reboot after installation to load kernel modules |
+| `set_max_performance` | `false` | Set nvpmodel to MAXN mode |
+| `install_x11` | `false` | Install X11/Xorg packages for display testing |
+| `regenerate_initramfs` | `true` | Regenerate initramfs with dracut |
+| `reservation_hours` | `24` | Beaker reservation hours (boot order restores 2h before end) |
+
+**What the playbook does:**
+
+1. Registers system with Red Hat subscription (optional)
+2. Adds RHEL AppStream and BaseOS repositories
+3. Adds NVIDIA JetPack repository
+4. Installs JetPack RPMs (`dnf repository-packages nvidia-jetpack-el9 install`)
+5. Installs NVIDIA Container Toolkit
+6. Configures EFI boot order (RHEL first, then restores PXE for Beaker)
+7. Sets up CDI generation service (`nvidia-cdi.service`)
+8. Installs additional packages (podman, can-utils, usbutils, EPEL)
+9. Sets graphical target and regenerates initramfs
+10. Reboots to load kernel modules
+11. Verifies installation with `nvidia-smi`
+
+**Dry run:**
+
+```bash
+ansible-playbook -i inventory.yml install_jetpack_rpms.yml \
+  -e "target_host=${JETSON_HOST}" --check
+```
+
+### 6. Run Tests
 
 ```bash
 cd ../..  # Back to qejetson root
