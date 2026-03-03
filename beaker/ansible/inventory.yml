@@ -43,8 +43,13 @@ all:
     jetson:
       # Default target - override with -e "target_host=..."
       ansible_host: "{{ target_host | default('nvidia-jetson-agx-orin-05.khw.eng.bos2.dc.redhat.com') }}"
-      ansible_user: root
+      # Default user is root; override with -e "ansible_user=youruser" for non-root with sudo
+      ansible_user: "{{ ansible_ssh_user | default('root') }}"
       ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
+      # Become settings for privilege escalation (used when ansible_user is not root)
+      ansible_become: true
+      ansible_become_method: sudo
+      ansible_become_user: root
 
   vars:
     # Bootc image: base (repo path without tag) + tag (override with -e "bootc_image_tag=...")

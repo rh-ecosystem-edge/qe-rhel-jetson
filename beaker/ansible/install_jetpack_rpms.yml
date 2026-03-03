@@ -50,7 +50,11 @@
 - name: Install NVIDIA JetPack RPMs on Jetson systems
   hosts: all
   gather_facts: true
+  # Run all tasks as root (superuser) - required for package installation,
+  # systemd service creation, CDI generation, and system configuration
   become: true
+  become_user: root
+  become_method: sudo
 
   vars:
     # JetPack repository configuration

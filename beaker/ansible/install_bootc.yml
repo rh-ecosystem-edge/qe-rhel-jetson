@@ -19,7 +19,11 @@
 - name: Install bootc on Jetson systems
   hosts: all
   gather_facts: true
+  # Run all tasks as root (superuser) - required for package installation,
+  # bootc operations, and system configuration
   become: true
+  become_user: root
+  become_method: sudo
   
   vars:
     # Defaults for bootc_image, registry_url, boot_restore_hours come from inventory.yml
