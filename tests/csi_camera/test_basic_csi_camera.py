@@ -49,7 +49,7 @@ class TestCSICamera:
         Checks /sys/class/video4linux/ which is created by the videodev module,
         (This directory is only populated when camera drivers load successfully)."""
 
-        result = ssh.run("ls -1 /sys/class/video4linux/")
+        result = ssh.run("ls -1 /sys/class/video4linux/", fail_on_rc=False)
         # TODO: Convert to assert once MIPI/CSI2 camera support is confirmed
         #       for the target RHEL version (see Known Issue #1 above).
         if result.exit_status != 0:
@@ -62,7 +62,7 @@ class TestCSICamera:
         Checks if camera kernel modules 
         (tegra_camera, tegra_camera_platform, tegra_camera_rtcpu) are loaded."""
 
-        result = ssh.run("lsmod | grep camera")
+        result = ssh.run("lsmod | grep camera", fail_on_rc=False)
         # TODO: Convert to assert once MIPI/CSI2 camera support is confirmed
         #       for the target RHEL version (see Known Issue #1 above).
         if result.exit_status != 0:

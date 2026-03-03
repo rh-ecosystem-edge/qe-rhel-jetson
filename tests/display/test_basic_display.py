@@ -46,7 +46,7 @@ class TestDisplay:
         """Test display sysfs entries and status
         Checks nvidia_drm module is loaded, then verifies DRM connector status (via /sys/class/drm/card*-*/status)"""
 
-        drm_mod = ssh.run("lsmod | grep nvidia_drm")
+        drm_mod = ssh.run("lsmod | grep nvidia_drm", fail_on_rc=False)
         # TODO: Remove this warning block once the RPM/dracut config fix ships
         #       (see Known Issue #1 above).
         if drm_mod.exit_status != 0:
@@ -68,7 +68,7 @@ class TestDisplay:
     def test_x11_display(self, ssh):
         """Test X11 display is installed on the system."""
 
-        result = ssh.run("which Xorg || which X")
+        result = ssh.run("which Xorg || which X", fail_on_rc=False)
         if result.exit_status != 0:
             warnings.warn(UserWarning(
                 "Xorg/X11 server is not installed — Xorg is not part of JetPack RPMs"
