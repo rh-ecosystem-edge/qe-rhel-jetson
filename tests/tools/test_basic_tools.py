@@ -37,7 +37,7 @@ class TestTools:
         assert kind in ("list", "range"), (
             f"power_modes in jetson_hardware_specs must be a list (specific) or {{min, max}} (range); got {power_modes_val!r}"
         )
-        result = ssh.run("nvpmodel -q 2>/dev/null")
+        result = ssh.run("nvpmodel -q")
         assert result.exit_status == 0, f"nvpmodel -q failed: {result.stderr}"
         assert result.stdout.strip(), "nvpmodel produced no output"
         # Check if the power model is a number in the second line of the output
@@ -64,8 +64,8 @@ class TestTools:
 
     def test_nvfancontrol_available(self, ssh):
         """Test nvfancontrol is available (nvidia-jetpack-tools)."""
-        which_result = ssh.run("which nvfancontrol 2>/dev/null")
+        which_result = ssh.run("which nvfancontrol")
         if not which_result.stdout.strip():
             pytest.skip("nvfancontrol not in PATH")
-        result = ssh.run("nvfancontrol -q 2>/dev/null")
+        result = ssh.sudo("nvfancontrol -q")
         assert result.exit_status == 0, f"nvfancontrol failed: {result.stderr}"

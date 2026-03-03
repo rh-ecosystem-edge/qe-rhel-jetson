@@ -1,6 +1,6 @@
 # Jetson RPM Tests
 
-This directory contains pytest-based tests for Jetson RPMs using SSH connections via paramiko.
+This directory contains pytest-based tests for Jetson RPMs using SSH connections via fabric (high-level paramiko wrapper).
 
 ## Jetson Structure
 - HARDWARE ACCELERATORS: GPU (CUDA), DLA (AI), PVA (Vision), Video Enc/Dec
@@ -11,7 +11,7 @@ This directory contains pytest-based tests for Jetson RPMs using SSH connections
 
 ```
 infra-tests/            # SSH infrastructure
-├── ssh_client.py       # SSHConnection class using paramiko
+├── ssh_client.py       # SSHConnection class using fabric
 ├── hardware_info.py    # Collect hardware and system information from a Jetson device via SSH.
 └── __init__.py
 

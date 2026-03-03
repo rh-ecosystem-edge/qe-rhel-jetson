@@ -268,7 +268,6 @@ def ssh():
             f"Please verify:\n"
             f"  - Environment variables are set correctly (JETSON_HOST, JETSON_USERNAME, JETSON_PASSWORD or JETSON_KEY_PATH)\n"
             f"  - For key-based auth, set JETSON_KEY_PATH=~/.ssh/id_rsa (or your private key path)\n"
-            f"  - To see where Paramiko stalls, set JETSON_SSH_DEBUG=1 (or PARAMIKO_DEBUG=1) and re-run\n"
             f"  - Host is reachable (try: ping {JETSON_HOST} or telnet {JETSON_HOST} {JETSON_PORT})\n"
             f"  - SSH service is running on the target\n"
             f"  - Credentials are correct\n"

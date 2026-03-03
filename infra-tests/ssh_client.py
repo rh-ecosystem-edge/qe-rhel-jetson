@@ -1,18 +1,20 @@
 """
-SSH client infrastructure for Jetson RPM tests using paramiko.
+SSH client infrastructure for Jetson RPM tests using fabric.
 Based on test_basic_locally.py from edge-ai-image-pipelines.
 """
+
 import logging
 import socket
 import time
 import paramiko
-from pathlib import Path
+from fabric import Connection, Config
 from typing import Optional
-from tests import conftest as _conftest 
+from tests import conftest as _conftest
+
 logger = logging.getLogger(__name__)
 
 
-class SSHConnection:
+class SSHConnection(Connection):
     """Simple SSH wrapper that mimics FabricAdapter interface for compatibility with existing tests."""
 
     def __init__(
@@ -37,8 +39,13 @@ class SSHConnection:
         """
         logger.info(
             "[SSH debug] Connecting: host=%s port=%s user=%s timeout=%ss key=%s",
-            hostname, port, username, timeout, key_filename or "password",
+            hostname,
+            port,
+            username,
+            timeout,
+            key_filename or "password",
         )
+
         # Step 1: quick TCP check (fails here if host unreachable or you need ProxyJump)
         try:
             logger.info("[SSH debug] Step 1: TCP connect to %s:%s ...", hostname, port)
@@ -48,72 +55,78 @@ class SSHConnection:
         except OSError as e:
             logger.error("[SSH debug] Step 1 FAILED (TCP): %s", e)
             raise
-        # Step 2: Paramiko SSH connect (retry on timeout - lab links can be flaky)
-        last_error = None
-        connect_kw: dict = {
-            "hostname": hostname,
-            "port": port,
-            "username": username,
-            "timeout": timeout,
-        }
-        if key_filename:
-            connect_kw["key_filename"] = key_filename
-            connect_kw["password"] = password  # passphrase for encrypted key, or None
-        else:
-            connect_kw["password"] = password
 
+        # Step 2: initialize fabric.Connection
+        connect_kwargs: dict = {}
+        if key_filename:
+            connect_kwargs["key_filename"] = key_filename
+            connect_kwargs["passphrase"] = (
+                password  # passphrase for encrypted key, or None
+            )
+            config = Config()
+        elif password:
+            connect_kwargs["password"] = password
+            config = Config(
+                overrides={"sudo": {"password": password}}
+            )  # Use ssh password as sudo password
+        else:
+            raise ValueError("one of key_filename or password must be set")
+
+        super().__init__(
+            host=hostname,
+            user=username,
+            port=port,
+            config=config,
+            connect_timeout=timeout,
+            connect_kwargs=connect_kwargs,
+        )
+
+        self.client.set_missing_host_key_policy(paramiko.WarningPolicy())
+
+        # Step 3: Fabric SSH connect (retry on timeout - lab links can be flaky)
+        last_error = None
         for attempt in range(1, 4):  # up to 3 attempts
-            self.client = paramiko.SSHClient()
-            self.client.set_missing_host_key_policy(paramiko.WarningPolicy())
             try:
-                logger.info("[SSH debug] Step 2: Paramiko connect (attempt %s/3) ...", attempt)
-                self.client.connect(**connect_kw)
-                logger.info("[SSH debug] Step 2: Paramiko connect OK")
+                logger.info(
+                    "[SSH debug] Step 3: Fabric connect (attempt %s/3) ...", attempt
+                )
+                self.open()
+                logger.info("[SSH debug] Step 3: Fabric connect OK")
                 last_error = None
                 break
             except (TimeoutError, OSError) as e:
                 last_error = e
-                try:
-                    self.client.close()
-                except Exception:
-                    pass
-                logger.warning("[SSH debug] Step 2 attempt %s/3 failed: %s", attempt, e)
+                logger.warning(
+                    "[SSH debug] Step 3: Attempt %s/3 failed: %s", attempt, e
+                )
                 if attempt < 3:
                     time.sleep(2)
         if last_error is not None:
-            logger.error("[SSH debug] Step 2 FAILED (Paramiko) after 3 attempts: %s", last_error, exc_info=True)
+            logger.error(
+                "[SSH debug] Step 3: FAILED (Fabric) after 3 attempts: %s",
+                last_error,
+                exc_info=True,
+            )
             raise last_error
+
+        # Step 4: Fabric SSH sftp
         try:
-            logger.info("[SSH debug] Step 3: open_sftp() ...")
-            self.sftp = self.client.open_sftp()
-            logger.info("[SSH debug] Step 3: open_sftp OK")
+            logger.info("[SSH debug] Step 4: sftp() ...")
+            self.sftp()
+            logger.info("[SSH debug] Step 4: sftp() OK")
         except Exception as e:
-            logger.error("[SSH debug] Step 3 FAILED (SFTP): %s", e, exc_info=True)
-            try:
-                self.client.close()
-            except Exception as cleanup_error:
-                logger.warning("[SSH debug] Failed to close SSH client during SFTP cleanup: %s", cleanup_error)
+            logger.error("[SSH debug] Step 4: FAILED (SFTP): %s", e, exc_info=True)
             raise
-    
-    def run(self, command: str, timeout: Optional[int] = None, fail_on_rc: bool = True, print_output: bool = True):
-        """
-        Run a command and return result with stdout attribute.
-        
-        Args:
-            command: Command to execute
-            timeout: Optional timeout in seconds
-            
-        Returns:
-            Result object with stdout and exit_status attributes
-        """
+
+    def _mutate_command(self, command: str) -> str:
         MUTATING_DNF_COMMANDS = [
-            "install", 
-            "remove", 
-            "update", 
-            "upgrade", 
-            "dist-sync", 
-            "group", 
-            "config-manager"
+            "install",
+            "remove",
+            "update",
+            "upgrade",
+            "dist-sync",
+            "group",
+            "config-manager",
         ]
         # if bootc is available, add --transient to the dnf commands
         if _conftest.BOOTC_AVAILABLE:
@@ -123,28 +136,65 @@ class SSHConnection:
                 # Ensure we don't double-add the flag if it's already there
                 if "--transient" not in command:
                     command += " --transient"
+        return command
+
+    def run(
+        self,
+        command: str,
+        timeout: Optional[int] = None,
+        fail_on_rc: bool = True,
+        expect_rc: Optional[int] = 0,
+        print_output: bool = True,
+    ):
+        """
+        Run a command and return result with stdout attribute.
+
+        Args:
+            command: Command to execute
+            timeout: Optional timeout in seconds
+
+        Returns:
+            Result object with stdout and exit_status attributes
+        """
+        command = self._mutate_command(command)
+
         if print_output:
             print("\t\tRunning command:", command)
-        stdin, stdout, stderr = self.client.exec_command(command, timeout=timeout)
-        exit_status = stdout.channel.recv_exit_status()
-        output = stdout.read().decode('utf-8')
-        error_output = stderr.read().decode('utf-8')
-        
+
+        result = super().run(command, timeout=timeout, warn=True, hide=True)
         # Create a result-like object similar to Fabric's result
-        result = type('Result', (), {
-            'stdout': output,
-            'stderr': error_output,
-            'exit_status': exit_status,
-            'ok': exit_status == 0
-        })()
+        result = type(
+            "Result",
+            (),
+            {
+                "stdout": result.stdout,
+                "stderr": result.stderr,
+                "exit_status": result.exited,
+                "ok": result.exited == 0,
+            },
+        )()
+
         if print_output:
             print("\t\tstdout:", result.stdout)
+
+        if fail_on_rc and result.exit_status != expect_rc:
+            raise RuntimeError(
+                f"Command '{command}' failed with exit status {result.exit_status}. Expected {expect_rc}. Error: {result.stderr}. \n\t\tOutput: {result.stdout}"
+            )
+
         return result
-    
-    def sudo(self, command: str, timeout: Optional[int] = None, fail_on_rc: bool = True, expect_rc: Optional[int] = 0, print_output: bool = True):
+
+    def sudo(
+        self,
+        command: str,
+        timeout: Optional[int] = None,
+        fail_on_rc: bool = True,
+        expect_rc: Optional[int] = 0,
+        print_output: bool = True,
+    ):
         """
         Run a command with sudo.
-        
+
         Args:
             command: Command to execute with sudo
             timeout: Optional timeout in seconds
@@ -153,40 +203,30 @@ class SSHConnection:
         Returns:
             Result object with stdout and exit_status attributes
         """
-        result = self.run(f"sudo {command}", timeout=timeout, print_output=print_output)
+        command = self._mutate_command(command)
+
+        if print_output:
+            print("\t\tRunning command:", command)
+
+        result = super().sudo(command, timeout=timeout, warn=True, hide=True)
+        # Create a result-like object similar to Fabric's result
+        result = type(
+            "Result",
+            (),
+            {
+                "stdout": result.stdout,
+                "stderr": result.stderr,
+                "exit_status": result.exited,
+                "ok": result.exited == 0,
+            },
+        )()
+
+        if print_output:
+            print("\t\tstdout:", result.stdout)
+
         if fail_on_rc and result.exit_status != expect_rc:
-            raise RuntimeError(f"Command '{command}' failed with exit status {result.exit_status}. Expected {expect_rc}. Error: {result.stderr}. \n\t\tOutput: {result.stdout}")
+            raise RuntimeError(
+                f"Command '{command}' failed with exit status {result.exit_status}. Expected {expect_rc}. Error: {result.stderr}. \n\t\tOutput: {result.stdout}"
+            )
+
         return result
-    
-    def put(self, local_path: Path, remote_path: str):
-        """
-        Upload a file to remote host.
-        
-        Args:
-            local_path: Local file path (Path object or string)
-            remote_path: Remote file path
-        """
-        self.sftp.put(str(local_path), remote_path)
-    
-    def get(self, remote_path: str, local_path: Path):
-        """
-        Download a file from remote host.
-        
-        Args:
-            remote_path: Remote file path
-            local_path: Local file path (Path object or string)
-        """
-        self.sftp.get(remote_path, str(local_path))
-    
-    def close(self):
-        """Close SSH connection."""
-        if hasattr(self, 'sftp') and self.sftp:
-            self.sftp.close()
-        if hasattr(self, 'client') and self.client:
-            self.client.close()
-    
-    def __enter__(self):
-        return self
-    
-    def __exit__(self, *args):
-        self.close()

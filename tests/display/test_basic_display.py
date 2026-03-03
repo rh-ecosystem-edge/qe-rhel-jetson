@@ -39,7 +39,7 @@ class TestDisplay:
         """Test display device nodes are present.
         Checks for DRM (/dev/dri/*) or framebuffer (/dev/fb*) device nodes"""
 
-        result = ssh.run("ls -la /dev/dri/* 2>/dev/null || ls -la /dev/fb* 2>/dev/null")
+        result = ssh.run("ls -la /dev/dri/* || ls -la /dev/fb*")
         assert result.exit_status == 0, f"Failed to check display devices: {result.stderr}"
 
     def test_display_by_drm(self, ssh):
@@ -57,7 +57,7 @@ class TestDisplay:
                 "/etc/modules-load.d/nvidia-load.conf)"
             ))
             return
-        result = ssh.run("ls -1 /sys/class/drm/ 2>/dev/null")
+        result = ssh.run("ls -1 /sys/class/drm/")
         assert result.exit_status == 0, f"Failed to access DRM sysfs: {result.stderr}"
         result = ssh.run("cat /sys/class/drm/card*-*/status")
         assert result.exit_status == 0, f"Failed to check display status: {result.stderr}"
@@ -68,7 +68,7 @@ class TestDisplay:
     def test_x11_display(self, ssh):
         """Test X11 display is installed on the system."""
 
-        result = ssh.run("which Xorg 2>/dev/null || which X 2>/dev/null")
+        result = ssh.run("which Xorg || which X")
         if result.exit_status != 0:
             warnings.warn(UserWarning(
                 "Xorg/X11 server is not installed — Xorg is not part of JetPack RPMs"
@@ -78,15 +78,15 @@ class TestDisplay:
         """Test Wayland-related libraries are present (nvidia-jetpack-wayland).
         Checks that Wayland shared libraries are available via ldconfig. (come from the nvidia-jetpack-wayland RPM)"""
 
-        result = ssh.run("ldconfig -p 2>/dev/null | grep -i wayland")
+        result = ssh.run("ldconfig -p | grep -i wayland")
         assert result.exit_status == 0, f"Failed to check Wayland libs: {result.stderr}"
         assert "wayland" in result.stdout.lower(), "No Wayland libraries found (nvidia-jetpack-wayland may be missing)"
 
     def test_wayland_socket_or_server(self, ssh):
         """Test Wayland socket or compositor binary available (optional on headless)."""
         
-        socket_result = ssh.run("ls /run/user/*/wayland-* 2>/dev/null")
-        which_result = ssh.run("which weston 2>/dev/null || which Xwayland 2>/dev/null || which xrandr 2>/dev/null")
+        socket_result = ssh.run("ls /run/user/*/wayland-*", fail_on_rc=False)
+        which_result = ssh.run("which weston || which Xwayland || which xrandr", fail_on_rc=False)
         has_socket = socket_result.exit_status == 0 and socket_result.stdout.strip()
         has_binary = which_result.exit_status == 0 and which_result.stdout.strip()
         if not (has_socket or has_binary):
