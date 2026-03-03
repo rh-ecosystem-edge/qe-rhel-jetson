@@ -19,7 +19,11 @@
 - name: Install bootc on Jetson systems
   hosts: all
   gather_facts: true
+  # Run all tasks as root (superuser) - required for package installation,
+  # bootc operations, and system configuration
   become: true
+  become_user: root
+  become_method: sudo
   
   vars:
     # Defaults for bootc_image, registry_url, boot_restore_hours come from inventory.yml
@@ -330,14 +334,73 @@
       tags: [reboot]
     
     #=========================================================================
-    # Step 10: Verify deployment
+    # Step 10: Install additional packages for testing
     #=========================================================================
     - name: Wait for system to be accessible
       ansible.builtin.wait_for_connection:
         timeout: 300
-      when: auto_reboot
+      when: auto_reboot | bool
       tags: [verify]
-    
+
+    - name: Detect RHEL version from /etc/redhat-release
+      ansible.builtin.shell: |
+        if [ -f /etc/redhat-release ]; then
+          grep -oP '\d+\.\d+' /etc/redhat-release | head -1
+        else
+          echo "9.7"
+        fi
+      register: detected_rhel_version
+      changed_when: false
+      tags: [packages]
+
+    - name: Set RHEL version facts
+      ansible.builtin.set_fact:
+        rhel_version: "{{ ansible_distribution_version | default(detected_rhel_version.stdout | trim) }}"
+        rhel_major_version: "{{ ansible_distribution_major_version | default(detected_rhel_version.stdout.split('.')[0] | trim) }}"
+      tags: [packages]
+
+    - name: Add RHEL AppStream repository
+      ansible.builtin.command:
+        cmd: >
+          dnf config-manager --add-repo
+          http://download.eng.rdu.redhat.com/released/rhel-{{ rhel_major_version }}/RHEL-{{ rhel_major_version }}/{{ rhel_version }}.0/AppStream/aarch64/os/
+      register: appstream_repo_result
+      changed_when: appstream_repo_result.rc == 0
+      failed_when: false
+      tags: [packages]
+
+    - name: Add RHEL BaseOS repository
+      ansible.builtin.command:
+        cmd: >
+          dnf config-manager --add-repo
+          http://download.eng.rdu.redhat.com/released/rhel-{{ rhel_major_version }}/RHEL-{{ rhel_major_version }}/{{ rhel_version }}.0/BaseOS/aarch64/os/
+      register: baseos_repo_result
+      changed_when: baseos_repo_result.rc == 0
+      failed_when: false
+      tags: [packages]
+
+    - name: Install EPEL repository (required for can-utils)
+      ansible.builtin.dnf:
+        name: "https://dl.fedoraproject.org/pub/epel/epel-release-latest-{{ rhel_major_version }}.noarch.rpm"
+        state: present
+        disable_gpg_check: true
+      failed_when: false
+      tags: [packages]
+
+    - name: Install additional testing packages
+      ansible.builtin.dnf:
+        name:
+          - podman
+          - can-utils
+          - usbutils
+          - pciutils
+        state: present
+      failed_when: false
+      tags: [packages]
+
+    #=========================================================================
+    # Step 11: Verify deployment
+    #=========================================================================
     - name: Check bootc status
       ansible.builtin.command: bootc status
       register: bootc_status

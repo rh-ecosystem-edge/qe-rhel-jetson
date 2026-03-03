@@ -1,6 +1,6 @@
 # Ansible inventory for Jetson systems
 #
-# Usage:
+# Usage (bootc):
 #   # Use default target
 #   ansible-playbook -i inventory.yml install_bootc.yml --ask-vault-pass
 #
@@ -15,18 +15,41 @@
 #   # Override reservation length; boot order restores 2h before reservation ends:
 #   ansible-playbook -i inventory.yml install_bootc.yml --ask-vault-pass \
 #     -e "reservation_hours=24"
-
+#
 #  # Override bootc_image_base: 
 #   ansible-playbook -i inventory.yml install_bootc.yml --ask-vault-pass \
 #     -e "bootc_image_base=registry.gitlab.com/redhat/rhel/sst/orin-sidecar/nvidia-jetson-sidecar/rhel-9.7"
+#
+# Usage (JetPack RPMs):
+#   # Basic usage with subscription credentials
+#   ansible-playbook -i inventory.yml install_jetpack_rpms.yml \
+#     -e "target_host=nvidia-igx-orin-04.khw.eng.bos2.dc.redhat.com" \
+#     -e "rhsm_username=rh-ee-youruser" \
+#     -e "rhsm_password=your_kerberos_password"
+#
+#   # Skip subscription if already registered
+#   ansible-playbook -i inventory.yml install_jetpack_rpms.yml \
+#     -e "target_host=nvidia-igx-orin-04.khw.eng.bos2.dc.redhat.com" \
+#     -e "skip_subscription=true"
+#
+#   # With max performance mode
+#   ansible-playbook -i inventory.yml install_jetpack_rpms.yml \
+#     -e "target_host=nvidia-igx-orin-04.khw.eng.bos2.dc.redhat.com" \
+#     -e "skip_subscription=true" \
+#     -e "set_max_performance=true"
 
 all:
   hosts:
     jetson:
       # Default target - override with -e "target_host=..."
       ansible_host: "{{ target_host | default('nvidia-jetson-agx-orin-05.khw.eng.bos2.dc.redhat.com') }}"
-      ansible_user: root
+      # Default user is root; override with -e "ansible_user=youruser" for non-root with sudo
+      ansible_user: "{{ ansible_ssh_user | default('root') }}"
       ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
+      # Become settings for privilege escalation (used when ansible_user is not root)
+      ansible_become: true
+      ansible_become_method: sudo
+      ansible_become_user: root
 
   vars:
     # Bootc image: base (repo path without tag) + tag (override with -e "bootc_image_tag=...")
@@ -42,4 +65,7 @@ all:
     reservation_hours: 24
     boot_restore_hours: "{{ (reservation_hours | default(24) | int) - 2 }}"
     boot_label: "Red Hat Enterprise Linux bootc"
+
+    # JetPack RPM Installation defaults
+    jetpack_repo_url: "http://hwcert-vm-repo-01.lab.eng.rdu2.redhat.com/packages/RHEL9/nvidia-jetpack/nvidia-jetpack-el9.repo"
 
