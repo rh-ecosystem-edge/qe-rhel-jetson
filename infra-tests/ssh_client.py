@@ -1,5 +1,5 @@
 """
-SSH client infrastructure for Jetson RPM tests using paramiko.
+SSH client infrastructure for Jetson RPM tests using fabric.
 Based on test_basic_locally.py from edge-ai-image-pipelines.
 """
 
@@ -83,15 +83,15 @@ class SSHConnection(Connection):
 
         self.client.set_missing_host_key_policy(paramiko.WarningPolicy())
 
-        # Step 3: Paramiko SSH connect (retry on timeout - lab links can be flaky)
+        # Step 3: Fabric SSH connect (retry on timeout - lab links can be flaky)
         last_error = None
         for attempt in range(1, 4):  # up to 3 attempts
             try:
                 logger.info(
-                    "[SSH debug] Step 3: Paramiko connect (attempt %s/3) ...", attempt
+                    "[SSH debug] Step 3: Fabric connect (attempt %s/3) ...", attempt
                 )
                 self.open()
-                logger.info("[SSH debug] Step 3: Paramiko connect OK")
+                logger.info("[SSH debug] Step 3: Fabric connect OK")
                 last_error = None
                 break
             except (TimeoutError, OSError) as e:
@@ -103,13 +103,13 @@ class SSHConnection(Connection):
                     time.sleep(2)
         if last_error is not None:
             logger.error(
-                "[SSH debug] Step 3: FAILED (Paramiko) after 3 attempts: %s",
+                "[SSH debug] Step 3: FAILED (Fabric) after 3 attempts: %s",
                 last_error,
                 exc_info=True,
             )
             raise last_error
 
-        # Step 4: Paramiko SSH sftp
+        # Step 4: Fabric SSH sftp
         try:
             logger.info("[SSH debug] Step 4: sftp() ...")
             self.sftp()
