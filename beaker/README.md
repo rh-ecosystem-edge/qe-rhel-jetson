@@ -109,7 +109,7 @@ ansible-vault edit vars/secrets.yml
 # should know the vault password
 ```
 
-### 4. Deploy Bootc Image
+### 4. Deploy Bootc Image (You have Alternative deployment next Step)
 
 Run the following command for overriding the default target host, and image tag/hash 
 (base URL unchanged, from the gitlab nvidia-jetson-sidecar repo)
@@ -136,6 +136,16 @@ ansible-playbook -i inventory.yml install_jetpack_rpms.yml \
   -e "target_host=${JETSON_HOST}"
 ```
 
+**Using ansible-vault for subscription credentials (recommended):**
+
+You can store `rhsm_username` and `rhsm_password` in `vars/secrets.yml` (see Step 3) and use:
+
+```bash
+ansible-playbook -i inventory.yml install_jetpack_rpms.yml --ask-vault-pass \
+  -e "target_host=${JETSON_HOST}" \
+  -e "reservation_hours=${RESERVATION_HOURS}" \
+```
+
 **With Red Hat subscription credentials:**
 
 ```bash
@@ -143,16 +153,6 @@ ansible-playbook -i inventory.yml install_jetpack_rpms.yml \
   -e "target_host=${JETSON_HOST}" \
   -e "rhsm_username=rh-ee-youruser" \
   -e "rhsm_password=your_kerberos_password"
-```
-
-**Using ansible-vault for subscription credentials (recommended):**
-
-You can store `rhsm_username` and `rhsm_password` in `vars/secrets.yml` (see Step 3) and use:
-
-```bash
-ansible-playbook -i inventory.yml install_jetpack_rpms.yml \
-  -e "target_host=${JETSON_HOST}" \
-  --ask-vault-pass
 ```
 
 **Skip subscription (if already registered):**
@@ -190,6 +190,7 @@ ansible-playbook -i inventory.yml install_jetpack_rpms.yml \
 9. Sets graphical target and regenerates initramfs
 10. Reboots to load kernel modules
 11. Verifies installation with `nvidia-smi`
+12. Restore Boot order to original
 
 **Dry run:**
 
