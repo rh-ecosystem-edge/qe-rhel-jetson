@@ -6,7 +6,7 @@ import pytest
 import os
 from datetime import datetime
 from pathlib import Path
-from tests import conftest as _conftest
+from tests_suites import conftest as _conftest
 
 FILE = Path(os.path.realpath(__file__)).parent
 

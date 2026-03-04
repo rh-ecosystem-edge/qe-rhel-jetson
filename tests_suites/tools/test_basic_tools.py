@@ -4,7 +4,7 @@ Covers nvidia-jetpack-tools: nvpmodel (power model) and nvfancontrol.
 """
 import re
 import pytest
-from tests import conftest as _conftest
+from tests_suites import conftest as _conftest
 
 
 def _power_modes_spec(spec):

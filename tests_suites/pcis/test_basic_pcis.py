@@ -3,7 +3,7 @@ PCI tests for Jetson RPMs.
 Based on test_basic.py and test_basic_locally.py from edge-ai-image-pipelines.
 """
 import pytest
-from tests import conftest as _conftest
+from tests_suites import conftest as _conftest
 
 
 class TestPCIs:

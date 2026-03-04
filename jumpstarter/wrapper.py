@@ -4,7 +4,6 @@ import time
 import sys
 import os
 import subprocess
-import importlib
 from pathlib import Path
 
 
@@ -38,11 +37,7 @@ with env() as client:
 
             project_root = Path(__file__).parent.parent
             sys.path.insert(0, str(project_root))
-            ssh_client_path = project_root / "infra-tests" / "ssh_client.py"
-            spec = importlib.util.spec_from_file_location("ssh_client", ssh_client_path)
-            ssh_client_module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(ssh_client_module)
-            SSHConnection = ssh_client_module.SSHConnection
+            from infra_tests.ssh_client import SSHConnection
 
             with SSHConnection(
                 addr[0],

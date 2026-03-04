@@ -9,7 +9,7 @@ import time
 import paramiko
 from fabric import Connection, Config
 from typing import Optional
-from tests import conftest as _conftest
+from tests_suites import conftest as _conftest
 
 logger = logging.getLogger(__name__)
 

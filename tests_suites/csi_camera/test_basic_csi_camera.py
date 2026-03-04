@@ -19,14 +19,6 @@ Known Issues
                 and bootc setups.
    TODO: If RHEL 9.7/9.8+ gets patches — unblacklist modules, convert back to asserts.
          For RHEL 10+ — convert to asserts (patches confirmed in RHEL-56474).
-
-2. Bootc Dracut Blacklist Bypass
-   Issue: On bootc images, dracut may bypass the blacklist so camera modules
-          load anyway. This is an initramfs composition side effect — it does
-          NOT mean camera functionality works on RHEL 9.
-   Affected tests: test_csi_camera_sysfs, test_camera_driver_loaded
-   Note: Tests use warnings (not asserts) so they handle both environments
-         correctly regardless of whether modules happen to load.
 """
 import warnings
 
