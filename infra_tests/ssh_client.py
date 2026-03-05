@@ -9,8 +9,6 @@ import time
 import paramiko
 from fabric import Connection, Config
 from typing import Optional
-from tests_suites import conftest as _conftest
-
 logger = logging.getLogger(__name__)
 
 
@@ -29,21 +27,32 @@ class SSHConnection(Connection):
         """
         Initialize SSH connection.
 
+        Auth priority (handled by paramiko internally):
+          1. key_filename (if provided) — tried first
+          2. password (if provided) — fallback if key auth fails, or primary if no key
+
         Args:
             hostname: Hostname or IP address of the Jetson device
             username: SSH username
-            password: SSH password (optional when using key_filename; used as key passphrase if key is encrypted)
+            password: SSH password (used for password auth; also used as key passphrase
+                      if key_filename points to an encrypted key)
             port: SSH port (default: 22)
             timeout: Connection timeout in seconds
-            key_filename: Path to private key file (e.g. ~/.ssh/id_rsa). Use this when auth is key-based.
+            key_filename: Path to private key file (e.g. ~/.ssh/id_rsa).
+                          Has priority over password — tried first.
         """
+        auth_methods = []
+        if key_filename:
+            auth_methods.append(f"key({key_filename})")
+        if password:
+            auth_methods.append("password")
         logger.info(
-            "[SSH debug] Connecting: host=%s port=%s user=%s timeout=%ss key=%s",
+            "[SSH debug] Connecting: host=%s port=%s user=%s timeout=%ss auth=%s",
             hostname,
             port,
             username,
             timeout,
-            key_filename or "password",
+            " -> ".join(auth_methods) or "none",
         )
 
         # Step 1: quick TCP check (fails here if host unreachable or you need ProxyJump)
@@ -57,20 +66,23 @@ class SSHConnection(Connection):
             raise
 
         # Step 2: initialize fabric.Connection
-        connect_kwargs: dict = {}
+        # Auth priority: key_filename first, password fallback.
+        # Disable agent/look_for_keys so only explicitly provided creds are used
+        # (avoids random ~/.ssh/ keys exhausting MaxAuthTries on the server).
+        if not key_filename and not password:
+            raise ValueError("one of key_filename or password must be set")
+
+        connect_kwargs: dict = {
+            "allow_agent": False,
+            "look_for_keys": False,
+        }
         if key_filename:
             connect_kwargs["key_filename"] = key_filename
-            connect_kwargs["passphrase"] = (
-                password  # passphrase for encrypted key, or None
-            )
-            config = Config()
-        elif password:
-            connect_kwargs["password"] = password
-            config = Config(
-                overrides={"sudo": {"password": password}}
-            )  # Use ssh password as sudo password
-        else:
-            raise ValueError("one of key_filename or password must be set")
+            connect_kwargs["passphrase"] = password  # decrypt key if encrypted, or None
+        if password:
+            connect_kwargs["password"] = password  # password auth (primary or fallback)
+
+        config = Config(overrides={"sudo": {"password": password}}) if password else Config()
 
         super().__init__(
             host=hostname,
@@ -128,6 +140,8 @@ class SSHConnection(Connection):
             "group",
             "config-manager",
         ]
+        # Import here to avoid circular import (conftest imports ssh_client)
+        from tests_suites import conftest as _conftest
         # if bootc is available, add --transient to the dnf commands
         if _conftest.BOOTC_AVAILABLE:
             # Split the command into parts to check the actual sub-command accurately
