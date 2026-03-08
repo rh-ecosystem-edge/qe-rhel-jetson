@@ -145,5 +145,6 @@ def set_kernel_arg(ssh, arg):
         return False
 
     logger.info("Adding kernel argument '%s' via grubby", arg)
+    ssh.sudo("dnf install grubby -y")
     ssh.sudo(f"grubby --update-kernel=ALL --args={arg}")
     return True
