@@ -1,0 +1,172 @@
+# Flash & Test Jetson via Jumpstarter
+
+Manual guide for building a bootc disk image, flashing it to a Jetson via Jumpstarter, and running tests.
+
+## Prerequisites
+
+- `podman` installed (with rootful machine configured)
+- `quay.io` registry access
+- Jumpstarter client access ([check your name here](https://gitlab.cee.redhat.com/automotive/jumpstarter/ecosystems-edge/-/tree/main/configuration/clients), if missing contact Nick Cao)
+
+## Environment Variables
+
+```bash
+export JETSON_USERNAME=root
+export JETSON_PASSWORD="your-password"
+# Optional: for key-based SSH auth (key must be added to config.toml too)
+export JETSON_KEY_PATH="~/.ssh/id_ed25519"
+```
+
+---
+
+## 1. Build the Disk Image
+
+### Configure Podman (one-time setup)
+
+```bash
+podman machine stop
+podman machine set --rootful
+podman machine start
+podman system connection default podman-machine-default-root
+```
+
+### Create config.toml
+
+```bash
+tee config.toml <<EOF
+[customizations.kernel]
+append = "console=ttyTCU0"
+
+[[customizations.user]]
+name = "${JETSON_USERNAME}"
+password = "${JETSON_PASSWORD}"
+groups = ["video", "wheel"]
+
+[[customizations.user]]
+name = "root"
+password = "${JETSON_PASSWORD}"
+key = "$(cat ~/.ssh/*.pub)"
+groups = ["video", "wheel"]
+EOF
+```
+
+> **Note:** The `key` field must contain the **public key content** (not a file path).
+> `$(cat ~/.ssh/*.pub)` expands to your actual public key string.
+
+### Pull and Build
+
+```bash
+podman login quay.io
+
+podman pull quay.io/redhat-user-workloads/jetpack-for-rhel-tenant/rhel97-ga-5140-61151-stage@sha256:<hash>
+
+mkdir -p ./output && sudo chmod 777 ./output
+
+sudo podman run --rm --privileged \
+  --security-opt label=type:unconfined_t \
+  -v /var/lib/containers/storage:/var/lib/containers/storage \
+  -v ./config.toml:/config.toml:ro \
+  -v ./output:/output \
+  quay.io/centos-bootc/bootc-image-builder:latest build \
+  --output /output --type raw --target-arch arm64 \
+  quay.io/redhat-user-workloads/jetpack-for-rhel-tenant/rhel97-ga-5140-61151-stage@sha256:<hash>
+```
+
+### Compress
+
+```bash
+xz ./output/image/disk.raw
+# Result: ./output/image/disk.raw.xz
+```
+
+---
+
+## 2. Flash via Jumpstarter
+
+### Install Jumpstarter Client
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/jumpstarter-dev/jumpstarter/main/python/install.sh | bash -s -- -s main
+```
+
+### Login and Get a Lease
+
+```bash
+jmp login $USER@jumpstarter-ecosystems.apps.rosa.auto-devcluster.bzdx.p3.openshiftapps.com
+
+jmp get exporters                 # list available devices
+jmp get leases --all              # see what's taken
+jmp shell --selector device=<DEVICE> --duration 1:30:00
+```
+
+### Flash the Image
+
+Inside the Jumpstarter shell:
+
+```bash
+j storage flash --compression xz ./output/image/disk.raw.xz
+j storage dut # witch storage to the Jetson so it can boot from it
+j power cycle # power on the device
+j serial start-console # verify boot (exit: Ctrl+B x3)
+ssh root@<device> /usr/libexec/bootc-generic-growpart # expand the root partition
+```
+
+---
+
+## 3. Run Tests
+
+Two options after flashing:
+
+### Option A: Run Directly (outside Jumpstarter shell)
+
+Keep the Jumpstarter shell open in one terminal. In another terminal:
+
+```bash
+export JETSON_HOST=<device-hostname>
+export JETSON_USERNAME=root
+export JETSON_PASSWORD="your-password"
+
+cd qe-rhel-jetson
+source .venv/bin/activate # In case you already created py interpreter
+pytest tests_suites/
+```
+
+> See [tests_suites/README.md](../tests_suites/README.md) for test configuration details.
+
+### Option B: Run via wrapper.py (automated, recommended)
+
+The wrapper automates: power cycle → enable SSH → growpart → run pytest.
+
+```bash
+cd qe-rhel-jetson
+source .venv/bin/activate
+pip install -r requirements.txt
+
+jmp get leases --client $USER     # copy your lease name
+jmp shell --lease <LEASE_NAME> -- python jumpstarter/wrapper.py pytest tests_suites/
+```
+
+### Release the Lease
+
+```bash
+exit    # from the Jumpstarter shell
+```
+
+---
+
+## What wrapper.py Does
+
+1. Connects storage to DUT and power-cycles the device
+2. Waits for boot (serial console login prompt)
+3. Enables `PermitRootLogin yes` via serial console (if password auth is used)
+4. Opens SSH tunnel via Jumpstarter port forwarding
+5. Runs `bootc-generic-growpart` to expand the root partition
+6. Launches `pytest` with `JETSON_HOST`/`JETSON_PORT` set to the forwarded address
+
+### SSH Auth Priority
+
+| JETSON_KEY_PATH | JETSON_PASSWORD | Behavior |
+|---|---|---|
+| set | set | Key first → password fallback |
+| set | not set | Key only |
+| not set | set | Password only |
