@@ -32,7 +32,10 @@ with env() as client:
 
         with client.serial.pexpect() as p:
             p.logfile = sys.stdout.buffer
-            p.expect_exact("login:", timeout=600)
+            time.sleep(5)
+            if not p.expect_exact("login:", timeout=600):
+                p.sendline("")
+            p.expect_exact("login:", timeout=30)
             print("Successfully showing login prompt via console")
 
             # password auth needs PermitRootLogin=yes to allow root password login.
