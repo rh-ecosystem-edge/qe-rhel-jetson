@@ -10,6 +10,7 @@ import re
 import time
 import logging
 import os
+import pytest
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +64,15 @@ def reboot_and_reconnect(ssh, timeout=300, poll_interval=10):
     Raises:
         TimeoutError: If the device does not come back within the timeout.
     """
+    # Jumpstarter SSH tunnel (TcpPortforwardAdapter) breaks on reboot — the
+    # exporter can't reach the device while it's down, killing the tunnel
+    # permanently.  All subsequent tests would fail with AuthenticationException.
+    if os.environ.get("JUMPSTARTER_IN_USE"):
+        pytest.skip(
+            "Reboot not supported through Jumpstarter SSH tunnel — "
+            "the TCP port-forward breaks when the device goes down"
+        )
+
     # Import here to avoid circular imports (conftest imports ssh_client)
     from tests_suites import conftest as _conftest
     SSHConnection = _conftest.SSHConnection

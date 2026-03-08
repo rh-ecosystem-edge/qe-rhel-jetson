@@ -40,7 +40,6 @@ Known Issues
 """
 import pytest
 import warnings
-from tests_resources.device_ops import reboot_and_reconnect, set_kernel_arg
 
 
 class TestDisplay:
@@ -53,7 +52,7 @@ class TestDisplay:
         result = ssh.run("ls -la /dev/dri/* || ls -la /dev/fb*", fail_on_rc=False)
         assert result.exit_status == 0, f"Failed to check display devices: {result.stderr}"
 
-    def test_display_by_drm(self, ssh):
+    def test_display_by_drm(self, ssh, ensure_pd_ignore_unused):
         """Test display sysfs entries and DRM connector status.
         Verifies nvidia_drm loading behavior based on systemd target, then checks
         /sys/class/drm/card*-*/status for display connection (see Known Issue #1)."""
@@ -78,18 +77,10 @@ class TestDisplay:
 
         if not drm_loaded:
             # multi-user.target: nvidia_drm is not auto-loaded, load on demand
-            # for testing DRM on multi-user.target
             load_result = ssh.sudo("modprobe nvidia_drm", fail_on_rc=False)
             assert load_result.exit_status == 0, (
                 f"Failed to load nvidia_drm on demand: {load_result.stderr}"
             )
-
-        # Add pd_ignore_unused to the kernel cmdline and reboot if needed
-        needs_reboot = set_kernel_arg(ssh, "pd_ignore_unused")
-        if needs_reboot:
-            ssh = reboot_and_reconnect(ssh)
-            is_added = set_kernel_arg(ssh, "pd_ignore_unused")
-            assert is_added, "Failed to add pd_ignore_unused to the kernel cmdline"
 
         # Step 4: Test DRM connector status
         result = ssh.run("ls -1 /sys/class/drm/", fail_on_rc=False)
@@ -98,7 +89,6 @@ class TestDisplay:
         assert result.exit_status == 0, f"Failed to check display status: {result.stderr}"
         if "disconnected" in result.stdout.lower():
             warnings.warn(UserWarning("Display is not connected"))
-            # TODO: Try to connect the display for more display testing like xrandr, resolution, etc.
 
     def test_x11_display(self, ssh):
         """Test X11 display is installed on the system.- Warn if not installed."""

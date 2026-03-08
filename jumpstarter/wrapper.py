@@ -69,6 +69,7 @@ with env() as client:
         with TcpPortforwardAdapter(client=client.ssh.tcp) as addr:
             os.environ["JETSON_HOST"] = addr[0]
             os.environ["JETSON_PORT"] = str(addr[1])
+            os.environ["JUMPSTARTER_IN_USE"] = "1"
 
             project_root = Path(__file__).parent.parent
             sys.path.insert(0, str(project_root))

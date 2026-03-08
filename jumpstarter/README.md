@@ -35,7 +35,7 @@ podman system connection default podman-machine-default-root
 ```bash
 tee config.toml <<EOF
 [customizations.kernel]
-append = "console=ttyTCU0"
+append = "console=ttyTCU0 pd_ignore_unused"
 
 [[customizations.user]]
 name = "${JETSON_USERNAME}"
@@ -52,6 +52,10 @@ EOF
 
 > **Note:** The `key` field must contain the **public key content** (not a file path).
 > `$(cat ~/.ssh/*.pub)` expands to your actual public key string.
+
+> **Why `pd_ignore_unused`?** Display tests need `nvidia_drm` loaded, which on RHEL 9.7
+> can cause a kernel hang without this flag. Baking it into the image avoids a reboot
+> during testing — important because Jumpstarter's SSH tunnel can't survive a device reboot.
 
 ### Pull and Build
 
