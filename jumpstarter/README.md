@@ -112,7 +112,10 @@ j storage flash --compression xz ./output/image/disk.raw.xz
 j storage dut # witch storage to the Jetson so it can boot from it
 j power cycle # power on the device
 j serial start-console # verify boot (exit: Ctrl+B x3)
-ssh root@<device> /usr/libexec/bootc-generic-growpart # expand the root partition
+# On the console's machine itself
+# login via root, for password- what you configured in config.toml
+/usr/libexec/bootc-generic-growpart # expand the root partition
+exit # exit from the console , back to the Jumpstarter Shell
 ```
 
 ---
