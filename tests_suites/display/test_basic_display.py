@@ -52,11 +52,12 @@ class TestDisplay:
         result = ssh.run("ls -la /dev/dri/* || ls -la /dev/fb*", fail_on_rc=False)
         assert result.exit_status == 0, f"Failed to check display devices: {result.stderr}"
 
-    def test_display_by_drm(self, ssh, ensure_pd_ignore_unused):
+    def test_display_by_drm(self, ensure_pd_ignore_unused):
         """Test display sysfs entries and DRM connector status.
         Verifies nvidia_drm loading behavior based on systemd target, then checks
         /sys/class/drm/card*-*/status for display connection (see Known Issue #1)."""
-
+        ssh = ensure_pd_ignore_unused
+        
         # Step 1: Check systemd target
         target_result = ssh.run("systemctl get-default", fail_on_rc=False)
         assert target_result.exit_status == 0, f"Failed to get systemd target: {target_result.stderr}"

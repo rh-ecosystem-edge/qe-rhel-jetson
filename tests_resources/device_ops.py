@@ -87,6 +87,8 @@ def reboot_and_reconnect(ssh, timeout=300, poll_interval=10):
 
     # Check if this is a Beaker machine (EFI with RHEL + PXE boot entries)
     original_boot_order, rhel_entry = _get_efi_boot_info(ssh)
+    if original_boot_order is None or rhel_entry is None:
+        raise ValueError("Failed to get EFI boot info")
 
     logger.info(f"Original boot order: {original_boot_order}")
     # Set RHEL first in boot order so the machine boots RHEL, not PXE
