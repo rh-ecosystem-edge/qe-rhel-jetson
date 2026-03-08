@@ -114,6 +114,12 @@ _templates:
 "Orin NX 8GB":
   <<: *orin_nx_common
 
+"Orin NX Developer Kit":
+  <<: *orin_nx_common
+
+"Orin NX Engineering Reference Developer Kit":
+  <<: *orin_nx_common
+
 "Orin Nano Developer Kit":
   <<: *nano_common
   tools: { power_modes: ["7W", "15W"] }

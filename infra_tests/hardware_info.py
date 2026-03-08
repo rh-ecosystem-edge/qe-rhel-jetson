@@ -1,6 +1,6 @@
 """
 Collect hardware and system information from a Jetson device via SSH.
-Used by tests/conftest.py to expose variables to all tests.
+Used by tests_suites/conftest.py to expose variables to all tests.
 """
 import re
 import logging
@@ -62,7 +62,7 @@ def collect(ssh) -> dict[str, Any]:
     Collect hardware and system info from the remote host via SSH.
 
     Args:
-        ssh: An SSHConnection instance (from infra-tests.ssh_client).
+        ssh: An SSHConnection instance (from infra_tests.ssh_client).
 
     Returns:
         Dict with keys (all None if value not found):

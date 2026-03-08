@@ -2,7 +2,7 @@
 
 ## Context
 
-Developers suggested comparing RHEL test outputs against Ubuntu (NVIDIA's officially supported OS) to validate that hardware specs are correctly detected. The existing TODO in `tests/pcis/test_basic_pcis.py:30` confirms this intent:
+Developers suggested comparing RHEL test outputs against Ubuntu (NVIDIA's officially supported OS) to validate that hardware specs are correctly detected. The existing TODO in `tests_suites/pcis/test_basic_pcis.py:30` confirms this intent:
 ```python
 #TODO will check the lanes and logical slots later according ubuntu kernel version
 ```
@@ -31,7 +31,7 @@ The goal is to establish Ubuntu as "ground truth" for hardware spec tests (PCIe,
 
 ## What Already Exists as Ground Truth
 
-The `tests/jetson_hardware_specs.yaml` already serves as the Ubuntu reference -- its values come from [NVIDIA's official Jetson Orin specifications](https://www.nvidia.com/en-us/autonomous-machines/embedded-systems/jetson-orin/), which describe behavior under Ubuntu+JetPack (L4T). The PCIe and USB tests already compare RHEL outputs against these YAML values.
+The `tests_suites/jetson_hardware_specs.yaml` already serves as the Ubuntu reference -- its values come from [NVIDIA's official Jetson Orin specifications](https://www.nvidia.com/en-us/autonomous-machines/embedded-systems/jetson-orin/), which describe behavior under Ubuntu+JetPack (L4T). The PCIe and USB tests already compare RHEL outputs against these YAML values.
 
 However, the YAML is incomplete:
 - PCIe `logical_slots` assertion is commented out (the TODO above)
@@ -71,8 +71,8 @@ python reference/collect_reference.py \
 | Ethernet | `nmcli -t -f DEVICE,TYPE device \| grep ethernet`, `lsmod` | Interface list, loaded driver names |
 
 The script will:
-- Reuse `SSHConnection` from `infra-tests/ssh_client.py`
-- Reuse `collect()` from `infra-tests/hardware_info.py` for device model identification
+- Reuse `SSHConnection` from `infra_tests/ssh_client.py`
+- Reuse `collect()` from `infra_tests/hardware_info.py` for device model identification
 - Auto-detect OS type via `/etc/os-release` (tag output as "ubuntu" or "rhel")
 - Normalize outputs into typed values (integers, lists) -- not raw strings -- for robust comparison
 - Derive model key using same matching logic as `conftest.get_hardware_spec()`
@@ -90,13 +90,13 @@ A `ReferenceData` class that:
 
 ### Phase 3: Test Integration
 
-**Modified file: `tests/conftest.py`**
+**Modified file: `tests_suites/conftest.py`**
 
 - Add session-scoped `ubuntu_reference` fixture that loads reference data if available
 - Returns `None` if no reference data exists (tests proceed normally)
-- Import `reference/comparison.py` via importlib (same pattern as `infra-tests/`)
+- Import `reference/comparison.py` via importlib (same pattern as `infra_tests/`)
 
-**Modified files: `tests/pcis/test_basic_pcis.py`, `tests/usbs/test_basic_usbs.py`**
+**Modified files: `tests_suites/pcis/test_basic_pcis.py`, `tests_suites/usbs/test_basic_usbs.py`**
 
 Add optional comparison after existing assertions:
 ```python
@@ -124,13 +124,13 @@ Even without Ubuntu access, we can improve coverage **today** by uncommenting th
 | `reference/collect_reference.py` | Create -- collection script |
 | `reference/comparison.py` | Create -- comparison utilities |
 | `reference/data/.gitkeep` | Create -- empty dir for future reference data |
-| `tests/conftest.py` | Modify -- add `ubuntu_reference` fixture |
-| `tests/pcis/test_basic_pcis.py` | Modify -- uncomment logical_slots, add optional comparison |
-| `tests/usbs/test_basic_usbs.py` | Modify -- add optional comparison |
+| `tests_suites/conftest.py` | Modify -- add `ubuntu_reference` fixture |
+| `tests_suites/pcis/test_basic_pcis.py` | Modify -- uncomment logical_slots, add optional comparison |
+| `tests_suites/usbs/test_basic_usbs.py` | Modify -- add optional comparison |
 
 ## Verification
 
-1. **Without Ubuntu reference data**: Run `pytest tests/pcis/ tests/usbs/` -- tests pass as before, no comparison warnings
+1. **Without Ubuntu reference data**: Run `pytest tests_suites/pcis/ tests_suites/usbs/` -- tests pass as before, no comparison warnings
 2. **With reference data**: Place a `reference_data.json` for the device model, run tests -- comparison warnings appear in output for any RHEL vs reference mismatches
 3. **Collection script**: Run against any accessible Jetson device to verify it captures correct outputs
 4. **Logical slots**: After uncommenting, verify `test_pci_spec` checks `logical_slots` counts

@@ -8,7 +8,7 @@ Based on test_basic.py and test_basic_locally.py from edge-ai-image-pipelines.
 # hub/4p = 4x Ports
 
 import pytest
-from tests import conftest as _conftest
+from tests_suites import conftest as _conftest
 
 
 class TestUSBs:

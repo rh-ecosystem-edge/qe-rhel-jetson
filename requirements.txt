@@ -16,3 +16,12 @@ requests-gssapi>=1.2.0
 
 # Ansible for bootc deployment
 ansible>=2.14.0
+
+# Jumpstarter framework
+jumpstarter>=0.1.0
+jumpstarter-driver-network>=0.1.0
+jumpstarter-driver-power>=0.1.0
+jumpstarter-driver-pyserial>=0.1.0
+jumpstarter-driver-ustreamer>=0.1.0
+jumpstarter-driver-dutlink>=0.1.0
+jumpstarter_driver_ssh>=0.1.0

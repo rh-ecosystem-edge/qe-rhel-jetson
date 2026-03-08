@@ -1,7 +1,9 @@
 # qe-rhel-jetson
-Repository for QE Jetson effort, includes automation of python tests and deploying Beaker machine
+
+Pytest-based hardware test suite for NVIDIA Jetson devices on RHEL, with deployment automation via Beaker and Jumpstarter.
 
 ## Jetson Structure
+
 - HARDWARE ACCELERATORS: GPU (CUDA), DLA (AI), PVA (Vision), Video Enc/Dec
 - INTERFACES: CSI Camera, USBs, PCIe, Ethernet, CAN bus, Display
 - SOFTWARE FRAMEWORKS: GStreamer (MultiMedia), TensorRT (AI), VPI (Vision)
@@ -14,26 +16,75 @@ pip install -r requirements.txt
 
 ## Configuration
 
-! For step by step Integration with Beaker (for Jetson testing)
-Read qe-rhel-jetson/beaker/README.md
+Tests are configured via environment variables:
 
-Tests can be configured via environment variables:
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `JETSON_HOST` | yes | Hostname or IP address |
+| `JETSON_USERNAME` | yes | SSH username |
+| `JETSON_PASSWORD` | one of these | SSH password |
+| `JETSON_KEY_PATH` | one of these | SSH private key path (e.g. `~/.ssh/id_ed25519`) |
+| `JETSON_PORT` | no (default: 22) | SSH port |
 
-- `JETSON_HOST`: Hostname or IP address of the Jetson device name
-- `JETSON_USERNAME`: SSH username
-- `JETSON_PASSWORD`: SSH password, OR `JETSON_KEY_PATH` : SSH key path e.g. ~/.ssh/id_rsa (use when auth is key-based)
-- `JETSON_PORT`: SSH port (default: 22)
+Auth priority: `JETSON_KEY_PATH` is tried first, `JETSON_PASSWORD` is the fallback.
+
+## Quick Start — What Do You Want to Do? (Which README to choose)
+
+```
+┌─────────────────────────────────────────────────────┐
+│           How are you deploying & testing?           │
+└──────────────┬───────────────────────┬───────────────┘
+               │                       │
+       ┌───────▼───────┐       ┌───────▼───────┐
+       │    Beaker      │       │  Jumpstarter   │
+       │ (lab machines) │       │ (edge devices) │
+       └───────┬───────┘       └───────┬───────┘
+               │                       │
+    ┌──────────▼──────────┐  ┌─────────▼─────────┐
+    │ 1. Reserve machine  │  │ 1. Build .raw.xz  │
+    │ 2. Deploy bootc/RPM │  │ 2. Flash via jmp   │
+    │ 3. Run tests (SSH)  │  │ 3. Run tests       │
+    └──────────┬──────────┘  └─────────┬─────────┘
+               │                       │
+               └───────────┬───────────┘
+                           │
+                  ┌────────▼────────┐
+                  │   pytest tests   │
+                  │  tests_suites/   │
+                  └─────────────────┘
+```
+
+| Path | Guide | What It Covers |
+|------|-------|----------------|
+| **Beaker** | [beaker/README.md](beaker/README.md) | Reserve a Jetson in the lab, deploy bootc image or JetPack RPMs via Ansible, run tests over SSH |
+| **Jumpstarter** | [jumpstarter/README.md](jumpstarter/README.md) | Build a disk image, flash to a Jetson via Jumpstarter, run tests (manual or automated with wrapper.py) |
+| **Tests** | [tests_suites/README.md](tests_suites/README.md) | Test suite details, hardware variables, markers, per-component test info |
+
+## Repository Structure
+
+```
+qe-rhel-jetson/
+├── tests_suites/               # Pytest test suites (per hardware component)
+│
+├── infra_tests/                # SSH infrastructure, Collect hardware/system info from device via SSH
+│
+├── tests_resources/            # Shared utilities/functions for all tests suites
+│
+├── beaker/                     # Beaker reservation & deployment automation
+│   ├── scripts/                # CLI tools (reserve_jetson.py)
+│   └── ansible/                # Ansible playbooks (bootc install, RPM install)
+│
+├── jumpstarter/                # Jumpstarter integration for hardware testing
+│   └── wrapper.py              # Flash existing image & test via Jumpstarter framework
+│
+└── .github/workflows/          # CI/CD - IN PROGRESS (Blocked by Firewall issues)
+    └── beaker-test.yml         # Reserve Beaker machine, deploy, run tests
+```
 
 ## Running Tests
 
-Run all tests:
 ```bash
-pytest tests/
-```
-
-Run tests for a specific component:
-```bash
-pytest tests/cuda/
-pytest tests/dla/
-pytest tests/pva/
+pytest tests_suites/              # all tests
+pytest tests_suites/cuda/         # specific component
+pytest tests_suites/ -v           # verbose output
 ```

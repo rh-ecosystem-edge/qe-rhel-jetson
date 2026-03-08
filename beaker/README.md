@@ -207,7 +207,7 @@ export JETSON_HOST="nvidia-jetson-agx-orin-05.khw.eng.bos2.dc.redhat.com"
 export JETSON_USERNAME="root"
 export JETSON_KEY_PATH="~/.ssh/id_rsa"  # or use JETSON_PASSWORD
 
-pytest tests/
+pytest tests_suites/
 ```
 
 ## GitHub Workflow

@@ -1,35 +1,22 @@
 """
 Shared pytest configuration and fixtures for all tests.
-This file imports SSHConnection from infra-tests/ssh_client.py and
-collects hardware info from infra-tests/hardware_info.py for use in all tests.
+This file imports SSHConnection from infra_tests/ssh_client.py and
+collects hardware info from infra_tests/hardware_info.py for use in all tests.
 """
 import pytest
 import os
 import time
 from pathlib import Path
 import sys
-import importlib.util
 import logging
 from typing import Optional, Union, Dict, Any
 import yaml
+from infra_tests.ssh_client import SSHConnection
+from infra_tests.hardware_info import collect as collect_hardware_info
+
 # Add project root to path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
-
-# Import SSHConnection from infra-tests/ssh_client.py
-# Since Python can't import from directories with hyphens (two or more words), we use importlib
-ssh_client_path = project_root / "infra-tests" / "ssh_client.py"
-spec = importlib.util.spec_from_file_location("ssh_client", ssh_client_path)
-ssh_client_module = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(ssh_client_module)
-SSHConnection = ssh_client_module.SSHConnection
-
-# Import hardware_info collect function from infra-tests
-hardware_info_path = project_root / "infra-tests" / "hardware_info.py"
-spec_hw = importlib.util.spec_from_file_location("hardware_info", hardware_info_path)
-hardware_info_module = importlib.util.module_from_spec(spec_hw)
-spec_hw.loader.exec_module(hardware_info_module)
-collect_hardware_info = hardware_info_module.collect
 
 # Configure logging
 logging.basicConfig(
@@ -195,7 +182,7 @@ def hardware_info_session():
     if get_hardware_spec(HARDWARE_MODEL_NAME) is None:
         pytest.skip(
             f"Hardware model not included in Testing Matrix: {HARDWARE_MODEL_NAME!r}. "
-            "Add the device to tests/jetson_hardware_specs.yaml to run tests."
+            "Add the device to tests_suites/jetson_hardware_specs.yaml to run tests."
         )
 
     # Print SETUP summary for each pytest run (values may be None if not found)

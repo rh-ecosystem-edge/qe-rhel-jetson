@@ -6,7 +6,7 @@ Based on test_basic.py and test_basic_locally.py from edge-ai-image-pipelines.
 # Install EPEL repository on RHEL: https://www.redhat.com/en/blog/install-epel-linux
 
 import pytest
-from tests import conftest as _conftest
+from tests_suites import conftest as _conftest
 import warnings
 
 class TestVideoEncDec:

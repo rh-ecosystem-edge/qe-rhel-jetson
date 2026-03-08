@@ -10,12 +10,12 @@ This directory contains pytest-based tests for Jetson RPMs using SSH connections
 ## Reposetory Tests Structure
 
 ```
-infra-tests/            # SSH infrastructure
+infra_tests/            # SSH infrastructure
 ├── ssh_client.py       # SSHConnection class using fabric
 ├── hardware_info.py    # Collect hardware and system information from a Jetson device via SSH.
 └── __init__.py
 
-tests/
+tests_suites/
 ├── conftest.py                 # Shared pytest fixtures (Import ssh_client.py, hardware_info collect function and set global variables)
 ├── jetson_hardware_specs.yaml  # Jetson hardware expected values per test category
 ├── kmod/                       # Kernel module (nvidia-jetpack-kmod)
@@ -57,29 +57,29 @@ ssh-keyscan -H ${JETSON_HOST} >> ~/.ssh/known_hosts
 
 Run all tests:
 ```bash
-pytest tests/
+pytest tests_suites/
 ```
 
 Run tests for a specific component:
 ```bash
-pytest tests/cuda/
-pytest tests/dla/
-pytest tests/pva/
+pytest tests_suites/cuda/
+pytest tests_suites/dla/
+pytest tests_suites/pva/
 ```
 
 Run only critical tests:
 ```bash
-pytest -m critical tests/
+pytest -m critical tests_suites/
 ```
 
 Run with verbose output:
 ```bash
-pytest -v tests/
+pytest -v tests_suites/
 ```
 
 ## How to Warn
 
-for more information look at tests/WARNING_BEHAVIOR.md
+for more information look at tests_suites/WARNING_BEHAVIOR.md
 
 ## Test Markers
 
@@ -107,7 +107,7 @@ When running pytest, the session collects hardware and system info from the Jets
 **Example usage in a test:**
 
 ```python
-from tests import conftest as _conftest
+from tests_suites import conftest as _conftest
 
 def test_something():
     if not _conftest.RPMS_AVAILABLE:

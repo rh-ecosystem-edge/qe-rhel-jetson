@@ -327,7 +327,7 @@ jobs:
           echo "🧪 Running tests on $JETSON_HOST"
           
           # Build pytest command
-          PYTEST_CMD="pytest tests/ -v --tb=short --timeout=600"
+          PYTEST_CMD="pytest tests_suites/ -v --tb=short --timeout=600"
           
           if [ -n "$MARKERS" ]; then
             PYTEST_CMD="$PYTEST_CMD -m '$MARKERS'"
@@ -355,7 +355,7 @@ jobs:
           name: test-logs
           path: |
             *.log
-            tests/**/*.log
+            tests_suites/**/*.log
           retention-days: 30
           if-no-files-found: ignore
 
