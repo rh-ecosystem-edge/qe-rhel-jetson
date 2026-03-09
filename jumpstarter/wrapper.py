@@ -32,7 +32,10 @@ with env() as client:
 
         with client.serial.pexpect() as p:
             p.logfile = sys.stdout.buffer
-            p.expect_exact("login:", timeout=600)
+            time.sleep(5)
+            if not p.expect_exact("login:", timeout=600):
+                p.sendline("")
+            p.expect_exact("login:", timeout=30)
             print("Successfully showing login prompt via console")
 
             # password auth needs PermitRootLogin=yes to allow root password login.
@@ -69,6 +72,7 @@ with env() as client:
         with TcpPortforwardAdapter(client=client.ssh.tcp) as addr:
             os.environ["JETSON_HOST"] = addr[0]
             os.environ["JETSON_PORT"] = str(addr[1])
+            os.environ["JUMPSTARTER_IN_USE"] = "1"
 
             project_root = Path(__file__).parent.parent
             sys.path.insert(0, str(project_root))

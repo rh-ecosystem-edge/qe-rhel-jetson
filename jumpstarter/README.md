@@ -35,12 +35,7 @@ podman system connection default podman-machine-default-root
 ```bash
 tee config.toml <<EOF
 [customizations.kernel]
-append = "console=ttyTCU0"
-
-[[customizations.user]]
-name = "${JETSON_USERNAME}"
-password = "${JETSON_PASSWORD}"
-groups = ["video", "wheel"]
+append = "console=ttyTCU0 pd_ignore_unused"
 
 [[customizations.user]]
 name = "root"
@@ -52,6 +47,10 @@ EOF
 
 > **Note:** The `key` field must contain the **public key content** (not a file path).
 > `$(cat ~/.ssh/*.pub)` expands to your actual public key string.
+
+> **Why `pd_ignore_unused`?** Display tests need `nvidia_drm` loaded, which on RHEL 9.7
+> can cause a kernel hang without this flag. Baking it into the image avoids a reboot
+> during testing — important because Jumpstarter's SSH tunnel can't survive a device reboot.
 
 ### Pull and Build
 
@@ -105,10 +104,6 @@ Inside the Jumpstarter shell:
 
 ```bash
 j storage flash --compression xz ./output/image/disk.raw.xz
-j storage dut # witch storage to the Jetson so it can boot from it
-j power cycle # power on the device
-j serial start-console # verify boot (exit: Ctrl+B x3)
-ssh root@<device> /usr/libexec/bootc-generic-growpart # expand the root partition
 ```
 
 ---
@@ -117,23 +112,7 @@ ssh root@<device> /usr/libexec/bootc-generic-growpart # expand the root partitio
 
 Two options after flashing:
 
-### Option A: Run Directly (outside Jumpstarter shell)
-
-Keep the Jumpstarter shell open in one terminal. In another terminal:
-
-```bash
-export JETSON_HOST=<device-hostname>
-export JETSON_USERNAME=root
-export JETSON_PASSWORD="your-password"
-
-cd qe-rhel-jetson
-source .venv/bin/activate # In case you already created py interpreter
-pytest tests_suites/
-```
-
-> See [tests_suites/README.md](../tests_suites/README.md) for test configuration details.
-
-### Option B: Run via wrapper.py (automated, recommended)
+### Option A: Run via wrapper.py (automated, recommended)
 
 The wrapper automates: power cycle → enable SSH → growpart → run pytest.
 
@@ -151,6 +130,34 @@ jmp shell --lease <LEASE_NAME> -- python jumpstarter/wrapper.py pytest tests_sui
 ```bash
 exit    # from the Jumpstarter shell
 ```
+
+### Option B: Run Directly (outside Jumpstarter shell)
+
+In the Jumpstarter shell:
+
+```bash
+j storage dut # witch storage to the Jetson so it can boot from it
+j power cycle # power on the device
+j serial start-console # verify boot (exit: Ctrl+B x3)
+# On the console's machine itself
+# login via root, for password- what you configured in config.toml
+/usr/libexec/bootc-generic-growpart # expand the root partition
+exit # exit from the console , back to the Jumpstarter Shell
+```
+
+Keep the Jumpstarter shell open in one terminal. In another terminal:
+
+```bash
+export JETSON_HOST=<device-hostname>
+export JETSON_USERNAME=root
+export JETSON_PASSWORD="your-password"
+
+cd qe-rhel-jetson
+source .venv/bin/activate # In case you already created py interpreter
+pytest tests_suites/
+```
+
+> See [tests_suites/README.md](../tests_suites/README.md) for test configuration details.
 
 ---
 

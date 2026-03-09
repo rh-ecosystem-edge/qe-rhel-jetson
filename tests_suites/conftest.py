@@ -2,6 +2,10 @@
 Shared pytest configuration and fixtures for all tests.
 This file imports SSHConnection from infra_tests/ssh_client.py and
 collects hardware info from infra_tests/hardware_info.py for use in all tests.
+
+Test tiers:
+  - Basic tests (default): run with `pytest tests_suites/`
+  - Extra tests: marked with @pytest.mark.extra, run with `pytest tests_suites/ --run-extra`
 """
 import pytest
 import os
@@ -264,3 +268,27 @@ def ssh():
         print(f"\n{error_msg}\n")
         logger.error(error_msg)
         raise
+
+
+# ---------------------------------------------------------------------------
+# Extra-tests support: @pytest.mark.extra tests are excluded by default.
+# Run them with: pytest tests_suites/ --run-extra
+# Or run ONLY extras: pytest tests_suites/ -m extra --run-extra
+# ---------------------------------------------------------------------------
+
+def pytest_addoption(parser):
+    parser.addoption(
+        "--run-extra",
+        action="store_true",
+        default=False,
+        help="Run tests marked with @pytest.mark.extra (skipped by default)",
+    )
+
+
+def pytest_collection_modifyitems(config, items):
+    if config.getoption("--run-extra"):
+        return  # --run-extra given: run everything
+    skip_extra = pytest.mark.skip(reason="Extra test — use --run-extra to run")
+    for item in items:
+        if "extra" in item.keywords:
+            item.add_marker(skip_extra)
