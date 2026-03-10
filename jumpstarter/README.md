@@ -35,7 +35,7 @@ podman system connection default podman-machine-default-root
 ```bash
 tee config.toml <<EOF
 [customizations.kernel]
-append = "console=ttyTCU0 pd_ignore_unused"
+append = "console=ttyTCU0"
 
 [[customizations.user]]
 name = "root"
@@ -45,12 +45,16 @@ groups = ["video", "wheel"]
 EOF
 ```
 
-> **Note:** The `key` field must contain the **public key content** (not a file path).
+> **Note:** IF known that BootC RHEL 9.7 (not 9.8+) deploy with non graphical target **please change** the append to `"console=ttyTCU0 pd_ignore_unused"` instead `"console=ttyTCU0"` | 
+> The `key` field must contain the **public key content** (not a file path).
 > `$(cat ~/.ssh/*.pub)` expands to your actual public key string.
 
-> **Why `pd_ignore_unused`?** Display tests need `nvidia_drm` loaded, which on RHEL 9.7
+> **Why `pd_ignore_unused`needed?** Display tests need `nvidia_drm` loaded, which on RHEL 9.7
 > can cause a kernel hang without this flag. Baking it into the image avoids a reboot
 > during testing — important because Jumpstarter's SSH tunnel can't survive a device reboot.
+
+> **Why `pd_ignore_unused`not needed?** Display tests need `nvidia_drm` loaded, which not loaded on RHEL 9.7 without graphical target,
+> If this is the case, only for RHEL9.7 and no graphical.target deployed , kernel falg pd_ignore_unused is needed.
 
 ### Pull and Build
 
