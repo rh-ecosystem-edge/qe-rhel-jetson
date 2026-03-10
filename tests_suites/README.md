@@ -10,10 +10,13 @@ This directory contains pytest-based tests for Jetson RPMs using SSH connections
 ## Reposetory Tests Structure
 
 ```
-infra_tests/            # SSH infrastructure
-├── ssh_client.py       # SSHConnection class using fabric
-├── hardware_info.py    # Collect hardware and system information from a Jetson device via SSH.
+infra_tests/                    # infrastructure for the tests (e.g SSH)
+├── ssh_client.py               # SSHConnection class using fabric
 └── __init__.py
+
+infra_resources/                # Shared utilities/functions for all tests suites
+├──  tests_resources            # Device operations for Jetson RPM tests
+└──  hardware_info.py           # Collect hardware and system information from a Jetson device.
 
 tests_suites/
 ├── conftest.py                 # Shared pytest fixtures (Import ssh_client.py, hardware_info collect function and set global variables)

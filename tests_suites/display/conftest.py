@@ -1,6 +1,8 @@
 import pytest
 from tests_resources.device_ops import reboot_and_reconnect, set_kernel_arg, get_systemd_target
 from tests_suites.conftest import RHEL_VERSION
+import os
+import warnings
 
 
 @pytest.fixture(scope="class")
@@ -36,6 +38,11 @@ def ensure_pd_ignore_unused(ssh):
         return
 
     # Needs reboot to apply. On Jumpstarter this will pytest.skip().
+    if os.environ.get("JUMPSTARTER_IN_USE"):
+        warnings.warn(UserWarning(
+            "Reboot was needed to set pd_ignore_unused (see jumpstarter/README.md), \
+            but not supported through Jumpstarter SSH tunnel — the TCP port-forward breaks when the device goes down"
+            ))
     new_ssh = reboot_and_reconnect(ssh)
     # Verify the arg took effect
     check = new_ssh.run("grep -i pd_ignore_unused /proc/cmdline", fail_on_rc=False)
