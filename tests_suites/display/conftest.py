@@ -19,10 +19,9 @@ def ensure_pd_ignore_unused(ssh):
     - RHEL 9.7 + multi-user.target + missing + Beaker -> add via grubby, reboot
     - RHEL 9.7 + multi-user.target + missing + Jumpstarter -> skip (reboot kills tunnel)
     """
-    # Only needed on RHEL 9.7
-    if RHEL_VERSION is not None and float(RHEL_VERSION) != 9.7:
+    # Only needed on RHEL 9.7; skip when version unknown or not 9.7
+    if RHEL_VERSION is None or float(RHEL_VERSION) != 9.7:
         yield ssh
-        print("RHEL 9.8+ skipping pd_ignore_unused")
         return
 
     # graphical.target loads nvidia_drm safely - no need to add pd_ignore_unused
@@ -40,10 +39,11 @@ def ensure_pd_ignore_unused(ssh):
     # Needs reboot to apply. On Jumpstarter this will pytest.skip().
     if os.environ.get("JUMPSTARTER_IN_USE"):
         print("Reboot was needed to set pd_ignore_unused, but not supported through Jumpstarter SSH tunnel")
-        warnings.warn(UserWarning(
-            "Reboot was needed to set pd_ignore_unused (see jumpstarter/README.md), \
-                but not supported through Jumpstarter SSH tunnel — the TCP port-forward breaks when the device goes down"
-            ))
+        warnings.warn(
+            "Reboot was needed to set pd_ignore_unused (see jumpstarter/README.md), "
+            "but not supported through Jumpstarter SSH tunnel — the TCP port-forward breaks when the device goes down",
+            UserWarning,
+        )
     new_ssh = reboot_and_reconnect(ssh)
     # Verify the arg took effect
     check = new_ssh.run("grep -i pd_ignore_unused /proc/cmdline", fail_on_rc=False)

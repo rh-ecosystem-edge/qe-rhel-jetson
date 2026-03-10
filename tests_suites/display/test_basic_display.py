@@ -90,16 +90,17 @@ class TestDisplay:
         result = ssh.run("cat /sys/class/drm/card*-*/status", fail_on_rc=False)
         assert result.exit_status == 0, f"Failed to check display status: {result.stderr}"
         if "disconnected" in result.stdout.lower():
-            warnings.warn(UserWarning("Display is not connected"))
+            warnings.warn("Display is not connected", UserWarning)
 
     def test_x11_display(self, ssh):
         """Test X11 display is installed on the system.- Warn if not installed."""
 
         result = ssh.run("which Xorg || which X", fail_on_rc=False)
         if result.exit_status != 0:
-            warnings.warn(UserWarning(
-                "Xorg/X11 server is not installed — Xorg is not part of JetPack RPMs"
-            ))
+            warnings.warn(
+                "Xorg/X11 server is not installed — Xorg is not part of JetPack RPMs",
+                UserWarning,
+            )
 
     def test_wayland_libs(self, ssh):
         """Test Wayland-related libraries are present (nvidia-jetpack-wayland).
