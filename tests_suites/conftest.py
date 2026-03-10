@@ -95,22 +95,6 @@ def _load_hardware_specs() -> Dict[str, Any]:
     except FileNotFoundError:
         raise ValueError(f"Hardware specs file not found: {path}")
 
-def _get_hardware_spec(hardware_model_name: Optional[str]) -> Optional[Dict[str, Any]]:
-    """
-    Return the expected-spec dict for the given hardware model name, or None if unknown.
-    hardware_model_name comes from the device (dmidecode Product Name or devicetree model).
-    """
-    if not hardware_model_name:
-        return None
-    specs = _load_hardware_specs()
-    name_lower = hardware_model_name.lower()
-    for key in specs:
-        if key.lower() in name_lower:
-            spec = specs.get(key)
-            if spec and not str(key).startswith("_"):
-                return spec
-    return None
-
 def _install_beaker_repo(ssh, rhel_version: Optional[float]):
     """
     Install Beaker repository on the Jetson.
@@ -145,6 +129,26 @@ def _install_beaker_repo(ssh, rhel_version: Optional[float]):
                   time.sleep(5)
               else:
                   raise
+
+# ---------------------------------------------------------------------------
+# Public Functions
+# ---------------------------------------------------------------------------
+
+def get_hardware_spec(hardware_model_name: Optional[str]) -> Optional[Dict[str, Any]]:
+    """
+    Return the expected-spec dict for the given hardware model name, or None if unknown.
+    hardware_model_name comes from the device (dmidecode Product Name or devicetree model).
+    """
+    if not hardware_model_name:
+        return None
+    specs = _load_hardware_specs()
+    name_lower = hardware_model_name.lower()
+    for key in specs:
+        if key.lower() in name_lower:
+            spec = specs.get(key)
+            if spec and not str(key).startswith("_"):
+                return spec
+    return None
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -187,7 +191,7 @@ def hardware_info_session():
     BOOTC_IMAGE_URL = info.get("bootc_image_url")
 
     # Skip entire session if hardware model is not in Testing Matrix (jetson_hardware_specs.yaml)
-    if _get_hardware_spec(HARDWARE_MODEL_NAME) is None:
+    if get_hardware_spec(HARDWARE_MODEL_NAME) is None:
         pytest.skip(
             f"Hardware model not included in Testing Matrix: {HARDWARE_MODEL_NAME!r}. "
             "Add the device to tests_suites/jetson_hardware_specs.yaml to run tests."

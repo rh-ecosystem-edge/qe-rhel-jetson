@@ -39,9 +39,10 @@ def ensure_pd_ignore_unused(ssh):
 
     # Needs reboot to apply. On Jumpstarter this will pytest.skip().
     if os.environ.get("JUMPSTARTER_IN_USE"):
+        print("Reboot was needed to set pd_ignore_unused, but not supported through Jumpstarter SSH tunnel")
         warnings.warn(UserWarning(
             "Reboot was needed to set pd_ignore_unused (see jumpstarter/README.md), \
-            but not supported through Jumpstarter SSH tunnel — the TCP port-forward breaks when the device goes down"
+                but not supported through Jumpstarter SSH tunnel — the TCP port-forward breaks when the device goes down"
             ))
     new_ssh = reboot_and_reconnect(ssh)
     # Verify the arg took effect
