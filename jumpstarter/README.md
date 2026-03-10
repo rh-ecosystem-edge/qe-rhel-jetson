@@ -128,6 +128,18 @@ pip install -r requirements.txt
 jmp get leases --client $USER     # copy your lease name
 jmp shell --lease <LEASE_NAME> -- python jumpstarter/wrapper.py pytest tests_suites/
 ```
+*If no PXE menu appears during the running* , stop and run the following command
+
+```bash
+j storage dut # witch storage to the Jetson so it can boot from it
+j power cycle # power on the device
+j serial start-console # Verify boot : 
+# -> IF "grub>" appears write exit to force rebooting 
+# -> IF stuck try press ENTER , if "login:" showed up everyting work
+# -> for exit: Ctrl+B x3
+```
+TRY AGAIN 
+```jmp shell --lease <LEASE_NAME> -- python jumpstarter/wrapper.py pytest tests_suites/```
 
 ### Release the Lease
 
