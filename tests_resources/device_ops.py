@@ -136,6 +136,14 @@ def reboot_and_reconnect(ssh, timeout=300, poll_interval=10):
     )
 
 
+def get_systemd_target(ssh):
+    """Return the current systemd default target (e.g. 'multi-user.target', 'graphical.target')."""
+    result = ssh.run("systemctl get-default", fail_on_rc=False)
+    if result.exit_status != 0:
+        raise RuntimeError(f"Failed to get systemd target: {result.stderr}")
+    return result.stdout.strip()
+
+
 def set_kernel_arg(ssh, arg):
     """
     Add a kernel boot argument if not already present.

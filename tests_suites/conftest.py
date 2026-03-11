@@ -1,7 +1,7 @@
 """
 Shared pytest configuration and fixtures for all tests.
 This file imports SSHConnection from infra_tests/ssh_client.py and
-collects hardware info from infra_tests/hardware_info.py for use in all tests.
+collects hardware info from tests_resources/hardware_info.py for use in all tests.
 
 Test tiers:
   - Basic tests (default): run with `pytest tests_suites/`
@@ -16,7 +16,7 @@ import logging
 from typing import Optional, Union, Dict, Any
 import yaml
 from infra_tests.ssh_client import SSHConnection
-from infra_tests.hardware_info import collect as collect_hardware_info
+from tests_resources.hardware_info import collect as collect_hardware_info
 
 # Add project root to path
 project_root = Path(__file__).parent.parent
@@ -78,7 +78,7 @@ else: # no key path provided, use password authentication
     key_path = None
 
 # ---------------------------------------------------------------------------
-# Functions
+# Internal Functions
 # --------------------------------------------------------------------------- 
 
 def _load_hardware_specs() -> Dict[str, Any]:
@@ -95,23 +95,7 @@ def _load_hardware_specs() -> Dict[str, Any]:
     except FileNotFoundError:
         raise ValueError(f"Hardware specs file not found: {path}")
 
-def get_hardware_spec(hardware_model_name: Optional[str]) -> Optional[Dict[str, Any]]:
-    """
-    Return the expected-spec dict for the given hardware model name, or None if unknown.
-    hardware_model_name comes from the device (dmidecode Product Name or devicetree model).
-    """
-    if not hardware_model_name:
-        return None
-    specs = _load_hardware_specs()
-    name_lower = hardware_model_name.lower()
-    for key in specs:
-        if key.lower() in name_lower:
-            spec = specs.get(key)
-            if spec and not str(key).startswith("_"):
-                return spec
-    return None
-
-def install_beaker_repo(ssh, rhel_version: Optional[float]):
+def _install_beaker_repo(ssh, rhel_version: Optional[float]):
     """
     Install Beaker repository on the Jetson.
     RHEL version is required to install the correct Beaker repository.
@@ -147,14 +131,38 @@ def install_beaker_repo(ssh, rhel_version: Optional[float]):
                   raise
 
 # ---------------------------------------------------------------------------
+# Public Functions
+# ---------------------------------------------------------------------------
+
+def get_hardware_spec(hardware_model_name: Optional[str]) -> Optional[Dict[str, Any]]:
+    """
+    Return the expected-spec dict for the given hardware model name, or None if unknown.
+    hardware_model_name comes from the device (dmidecode Product Name or devicetree model).
+    """
+    if not hardware_model_name:
+        return None
+    specs = _load_hardware_specs()
+    name_lower = hardware_model_name.lower()
+    for key in specs:
+        if key.lower() in name_lower:
+            spec = specs.get(key)
+            if spec and not str(key).startswith("_"):
+                return spec
+    return None
+
+# ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
+# ! FYI:
+# ! session fixture run once at the beginning of the test session
+# ! class fixture run once for each test class
 
 @pytest.fixture(scope="session", autouse=True)
 def hardware_info_session():
     """
     Collect hardware and system info from the Jetson via SSH at session start.
-    Sets module-level variables and prints SETUP summary for each pytest run.
+    Sets global variables and prints SETUP summary for each pytest run.
     """
     with SSHConnection(
         JETSON_HOST,
@@ -191,20 +199,21 @@ def hardware_info_session():
 
     # Print SETUP summary for each pytest run (values may be None if not found)
     fw_ver = f" {FIRMWARE_VERSION}" if FIRMWARE_VERSION is not None else ""
-    print("\n" + "=" * 60)
-    print("SETUP")
-    print("=" * 60)
+    print("\n" + "=" * 80)
+    print("SETUP SUMMARY")
+    print("=" * 80)
+    print(f"Hardware model name:   {HARDWARE_MODEL_NAME}")
+    print("=" * 80)
     print(f"1. RHEL version:          {RHEL_VERSION}")
-    print(f"2. Jetpack Version:       {JETPACK_VERSION}")
-    print(f"3. Firmware type/version: {FIRMWARE_TYPE}{fw_ver}")
-    print(f"4. Hardware model name:   {HARDWARE_MODEL_NAME}")
+    print(f"2. Kernel version:        {KERNEL_VERSION}")
+    print(f"3. Jetpack Version:       {JETPACK_VERSION}")
+    print(f"4. Firmware type/version: {FIRMWARE_TYPE}{fw_ver}")
+    print("=" * 80 )
     print(f"5. Bootc available:       {BOOTC_AVAILABLE}")
     print(f"6. Bootc image version:   {BOOTC_IMAGE_VERSION}")
-    print(f"7. Bootc version:         {BOOTC_VERSION}")
-    print(f"8. Bootc image URL:       {BOOTC_IMAGE_URL}")
-    print("=" * 60 + "\n")
+    print(f"7. Bootc image URL:       {BOOTC_IMAGE_URL}")
+    print("=" * 80 + "\n")
     yield
-
 
 @pytest.fixture(scope="session", autouse=True)
 def beaker_repo_session(hardware_info_session):
@@ -220,7 +229,7 @@ def beaker_repo_session(hardware_info_session):
         JETSON_TIMEOUT,
         key_filename=key_path,
     ) as ssh:
-        install_beaker_repo(ssh, RHEL_VERSION)
+        _install_beaker_repo(ssh, RHEL_VERSION)
     yield
 
 @pytest.fixture(scope="class")
@@ -283,7 +292,6 @@ def pytest_addoption(parser):
         default=False,
         help="Run tests marked with @pytest.mark.extra (skipped by default)",
     )
-
 
 def pytest_collection_modifyitems(config, items):
     if config.getoption("--run-extra"):

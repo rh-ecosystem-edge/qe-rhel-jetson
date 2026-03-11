@@ -22,8 +22,11 @@ Known Issues
      - graphical.target + nvidia_drm NOT loaded  → fail (service should load it)
      - multi-user.target + nvidia_drm loaded     → test DRM status
      - multi-user.target + nvidia_drm NOT loaded → load on demand, test DRM status
-   WARNING: Rupinder noted that loading nvidia_drm on multi-user.target with RHEL 9.7
-            requires 'pd_ignore_unused' in kernel cmdline to avoid kernel hang.
+   WARNING: Rupinder confirmed that loading nvidia_drm on multi-user.target with
+            RHEL 9.7 (TP) requires 'pd_ignore_unused' in kernel cmdline to avoid
+            kernel hang. RHEL 9.8+ (GA) does NOT need this workaround.
+            The ensure_pd_ignore_unused fixture gates on both RHEL version (9.7 only)
+            and systemd target (multi-user.target only).
    TODO: Henry noted nvidia_drm may be needed even without wayland/graphical target
          (e.g. for non-display workloads). Impact analysis needed — test workloads on
          multi-user.target with nvidia_drm loaded to verify stability and whether the
@@ -40,6 +43,7 @@ Known Issues
 """
 import pytest
 import warnings
+from tests_resources.device_ops import get_systemd_target
 
 
 class TestDisplay:
@@ -59,9 +63,7 @@ class TestDisplay:
         ssh = ensure_pd_ignore_unused
         
         # Step 1: Check systemd target
-        target_result = ssh.run("systemctl get-default", fail_on_rc=False)
-        assert target_result.exit_status == 0, f"Failed to get systemd target: {target_result.stderr}"
-        systemd_target = target_result.stdout.strip()
+        systemd_target = get_systemd_target(ssh)
 
         # Step 2: Check if nvidia_drm is loaded
         drm_mod = ssh.run("lsmod | grep nvidia_drm", fail_on_rc=False)
@@ -75,9 +77,8 @@ class TestDisplay:
                 "nvidia_drm is NOT loaded on graphical.target — "
                 "load-nvidia-drm.service should have loaded it"
             )
-
+        # In Case of not graphical.target, load nvidia_drm on demand (multi-user.target: nvidia_drm is not auto-loaded, load on demand)
         if not drm_loaded:
-            # multi-user.target: nvidia_drm is not auto-loaded, load on demand
             load_result = ssh.sudo("modprobe nvidia_drm", fail_on_rc=False)
             assert load_result.exit_status == 0, (
                 f"Failed to load nvidia_drm on demand: {load_result.stderr}"
@@ -89,16 +90,17 @@ class TestDisplay:
         result = ssh.run("cat /sys/class/drm/card*-*/status", fail_on_rc=False)
         assert result.exit_status == 0, f"Failed to check display status: {result.stderr}"
         if "disconnected" in result.stdout.lower():
-            warnings.warn(UserWarning("Display is not connected"))
+            warnings.warn("Display is not connected", UserWarning)
 
     def test_x11_display(self, ssh):
         """Test X11 display is installed on the system.- Warn if not installed."""
 
         result = ssh.run("which Xorg || which X", fail_on_rc=False)
         if result.exit_status != 0:
-            warnings.warn(UserWarning(
-                "Xorg/X11 server is not installed — Xorg is not part of JetPack RPMs"
-            ))
+            warnings.warn(
+                "Xorg/X11 server is not installed — Xorg is not part of JetPack RPMs",
+                UserWarning,
+            )
 
     def test_wayland_libs(self, ssh):
         """Test Wayland-related libraries are present (nvidia-jetpack-wayland).
