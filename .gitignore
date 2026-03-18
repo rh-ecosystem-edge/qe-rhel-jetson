@@ -24,3 +24,7 @@ beaker/ansible/vars/secrets.yml
 # Claude 
 .claude/
 CLAUDE.md
+
+# Jumpstarter resources
+config.toml
+output/

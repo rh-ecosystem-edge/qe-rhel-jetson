@@ -26,22 +26,38 @@ if key_filename and not os.path.exists(key_filename):
 with env() as client:
     with client.log_stream():
         client.storage.dut()
-        print("Storage connected to DUT")
+        print("[wrapper] Storage connected to DUT")
         client.power.cycle()
-        print("DUT powered on")
+        print("[wrapper] DUT powered on")
 
         with client.serial.pexpect() as p:
             p.logfile = sys.stdout.buffer
-            time.sleep(5)
-            if not p.expect_exact("login:", timeout=600):
-                p.sendline("")
+            time.sleep(30) # Wait for boot to settle before checking serial output.
+
+            got_login = False
+            for attempt in range(3):
+                # Look for either login: or grub> prompt
+                idx = p.expect_exact(["login:", "grub>"], timeout=600)
+                if idx == 0:
+                    got_login = True
+                    break
+                else:
+                    print(f"\n[wrapper] Device stuck at grub> (attempt {attempt + 1}/3), sending 'exit' to force reboot...")
+                    p.sendline("exit")
+                    time.sleep(10)
+
+            if not got_login:
+                raise RuntimeError("[wrapper] Failed to reach login: prompt after grub> recovery retries")
+
+            # Send Enter to get a fresh login: prompt
+            p.sendline("")
             p.expect_exact("login:", timeout=30)
-            print("Successfully showing login prompt via console")
+            print("[wrapper] Successfully showing login prompt via console")
 
             # password auth needs PermitRootLogin=yes to allow root password login.
             # (RHEL bootc defaults to prohibit-password which blocks root password login).
             if PASSWORD:
-                print("Configuring SSH root password login via serial console...")
+                print("[wrapper] Configuring SSH root password login via serial console...")
                 # The first "login:" might match a systemd message during boot
                 # Send Enter to get a fresh, reliable login prompt.
                 time.sleep(2)
@@ -61,12 +77,12 @@ with env() as client:
                     " && echo WRAPPER_SSH_CONFIG_OK"
                 )
                 p.expect_exact("WRAPPER_SSH_CONFIG_OK", timeout=30)
-                print("SSH root login enabled and sshd restarted")
+                print("[wrapper] SSH root login enabled and sshd restarted")
 
                 p.sendline("exit")
 
         # Wait for SSH service to be fully ready after sshd restart
-        print("Waiting for SSH service to start...")
+        print("[wrapper] Waiting for SSH service to start...")
         time.sleep(10)
 
         with TcpPortforwardAdapter(client=client.ssh.tcp) as addr:
