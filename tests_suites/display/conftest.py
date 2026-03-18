@@ -20,7 +20,7 @@ def ensure_pd_ignore_unused(ssh):
     - RHEL 9.7 + multi-user.target + missing + Jumpstarter -> skip (reboot kills tunnel)
     """
     # Only needed on RHEL 9.7; skip when version unknown or not 9.7
-    if RHEL_VERSION is None or float(RHEL_VERSION) != 9.7:
+    if RHEL_VERSION is None or RHEL_VERSION != "9.7":
         yield ssh
         return
 

@@ -6,6 +6,18 @@
 # Reference: https://www.nvidia.com/en-us/autonomous-machines/embedded-systems/jetson-orin/#:~:text=View%20Jetson%20Orin%20Technical%20Specifications
 
 # -----------------------------------------------------------------------------
+# Target versions per RHEL release (used by sanity tests and session skip logic)
+# -----------------------------------------------------------------------------
+_target_versions:
+  "9.7":
+    rhel_version: "9.7"
+    l4t_version: "36.5.0"
+    jetpack_userspace_version: "6.2.2"
+    jetpack_kmod_version: "6.2.2"
+    uefi_firmware_version: "36.4.4"
+    kernel_version: "5.14.0-611.38.1"
+
+# -----------------------------------------------------------------------------
 # Shared templates (anchors for merge; not used as match keys)
 # -----------------------------------------------------------------------------
 _templates:

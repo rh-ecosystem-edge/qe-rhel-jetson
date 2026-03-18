@@ -16,7 +16,10 @@ import logging
 from typing import Optional, Union, Dict, Any
 import yaml
 from infra_tests.ssh_client import SSHConnection
-from tests_resources.hardware_info import collect as collect_hardware_info
+from tests_resources.hardware_info import (
+    collect as collect_hardware_info,
+    compare_versions,
+)
 
 # Add project root to path
 project_root = Path(__file__).parent.parent
@@ -55,8 +58,10 @@ if missing_vars:
 # Hardware info variables (set by hardware_info_session fixture; use in tests)
 # All are None by default if value not found.
 # ---------------------------------------------------------------------------
-RHEL_VERSION: Optional[float] = None
-JETPACK_VERSION: Optional[Union[float, str]] = None  # str if X.Y.Z, float if X.Y
+RHEL_VERSION: Optional[str] = None  # str to avoid float('9.10') == 9.1
+L4T_VERSION: Optional[Union[float, str]] = None  # L4T from /etc/nv_tegra_release
+JETPACK_VERSION: Optional[str] = None  # userspace RPM version (e.g. '6.2.2')
+JETPACK_KMOD_VERSION: Optional[str] = None  # kmod RPM version (e.g. '6.2.2')
 FIRMWARE_VERSION: Optional[Union[float, str]] = None  # str if X.Y.Z, float if X.Y
 FIRMWARE_TYPE: Optional[str] = None
 HARDWARE_MODEL_NAME: Optional[str] = None
@@ -95,7 +100,7 @@ def _load_hardware_specs() -> Dict[str, Any]:
     except FileNotFoundError:
         raise ValueError(f"Hardware specs file not found: {path}")
 
-def _install_beaker_repo(ssh, rhel_version: Optional[float]):
+def _install_beaker_repo(ssh, rhel_version: Optional[str]):
     """
     Install Beaker repository on the Jetson.
     RHEL version is required to install the correct Beaker repository.
@@ -129,6 +134,30 @@ def _install_beaker_repo(ssh, rhel_version: Optional[float]):
                   time.sleep(5)
               else:
                   raise
+
+def _get_target_versions(rhel_version: Optional[str]) -> Optional[Dict[str, str]]:
+    """Return target version dict for the given RHEL version, or None."""
+    specs = _load_hardware_specs()
+    targets = specs.get("_target_versions", {})
+    return targets.get(str(rhel_version)) if rhel_version else None
+
+def _verify_target_versions() -> list[str]:
+    """Verify detected versions match targets. Returns list of mismatch messages."""
+    target = _get_target_versions(RHEL_VERSION)
+    if target is None:
+        return []
+    mismatches = []
+    checks = [
+        (FIRMWARE_VERSION, "uefi_firmware_version", "UEFI firmware"),
+        (L4T_VERSION, "l4t_version", "L4T"),
+        (JETPACK_VERSION, "jetpack_userspace_version", "JetPack userspace"),
+        (KERNEL_VERSION, "kernel_version", "Kernel"),
+    ]
+    for actual, key, label in checks:
+        expected = target.get(key)
+        if not compare_versions(actual, expected):
+            mismatches.append(f"{label}: actual={actual}, target={expected}")
+    return mismatches
 
 # ---------------------------------------------------------------------------
 # Public Functions
@@ -175,11 +204,14 @@ def hardware_info_session():
         info = collect_hardware_info(ssh)
 
     # Set module-level variables so all tests can import them
-    global RHEL_VERSION, JETPACK_VERSION, FIRMWARE_VERSION, FIRMWARE_TYPE
+    global RHEL_VERSION, L4T_VERSION, JETPACK_VERSION, JETPACK_KMOD_VERSION
+    global FIRMWARE_VERSION, FIRMWARE_TYPE
     global HARDWARE_MODEL_NAME, KERNEL_VERSION, CPU_ARCH
     global BOOTC_AVAILABLE, BOOTC_VERSION, BOOTC_IMAGE_URL, BOOTC_IMAGE_VERSION
     RHEL_VERSION = info.get("rhel_version")
+    L4T_VERSION = info.get("l4t_version")
     JETPACK_VERSION = info.get("jetpack_version")
+    JETPACK_KMOD_VERSION = info.get("jetpack_kmod_version")
     FIRMWARE_VERSION = info.get("firmware_version")
     FIRMWARE_TYPE = info.get("firmware_type")
     HARDWARE_MODEL_NAME = info.get("hardware_model_name")
@@ -197,21 +229,37 @@ def hardware_info_session():
             "Add the device to tests_suites/jetson_hardware_specs.yaml to run tests."
         )
 
+    # Skip entire session if RHEL version has no target versions defined
+    target = _get_target_versions(RHEL_VERSION)
+    if target is None:
+        pytest.skip(
+            f"Tests not supported yet for RHEL {RHEL_VERSION}. "
+            "Please wait for new changes or add a new target RHEL version entry "
+            "into qe-rhel-jetson/tests_suites/jetson_hardware_specs.yaml under _target_versions."
+        )
+
+    # Skip entire session if detected versions don't match targets
+    mismatches = _verify_target_versions()
+    if mismatches:
+        pytest.skip("Version mismatch — " + "; ".join(mismatches))
+
     # Print SETUP summary for each pytest run (values may be None if not found)
     fw_ver = f" {FIRMWARE_VERSION}" if FIRMWARE_VERSION is not None else ""
     print("\n" + "=" * 80)
     print("SETUP SUMMARY")
     print("=" * 80)
-    print(f"Hardware model name:   {HARDWARE_MODEL_NAME}")
+    print(f"Hardware model name:         {HARDWARE_MODEL_NAME}")
     print("=" * 80)
-    print(f"1. RHEL version:          {RHEL_VERSION}")
-    print(f"2. Kernel version:        {KERNEL_VERSION}")
-    print(f"3. Jetpack Version:       {JETPACK_VERSION}")
-    print(f"4. Firmware type/version: {FIRMWARE_TYPE}{fw_ver}")
-    print("=" * 80 )
-    print(f"5. Bootc available:       {BOOTC_AVAILABLE}")
-    print(f"6. Bootc image version:   {BOOTC_IMAGE_VERSION}")
-    print(f"7. Bootc image URL:       {BOOTC_IMAGE_URL}")
+    print(f"1. RHEL version:             {RHEL_VERSION}")
+    print(f"2. Kernel version:           {KERNEL_VERSION}")
+    print(f"3. L4T version:              {L4T_VERSION}")
+    print(f"4. JetPack version (RPM):    {JETPACK_VERSION}")
+    print(f"5. JetPack kmod (RPM):       {JETPACK_KMOD_VERSION}")
+    print(f"6. Firmware type/version:    {FIRMWARE_TYPE}{fw_ver}")
+    print("=" * 80)
+    print(f"7. Bootc available:          {BOOTC_AVAILABLE}")
+    print(f"8. Bootc image version:      {BOOTC_IMAGE_VERSION}")
+    print(f"9. Bootc image URL:          {BOOTC_IMAGE_URL}")
     print("=" * 80 + "\n")
     yield
 
