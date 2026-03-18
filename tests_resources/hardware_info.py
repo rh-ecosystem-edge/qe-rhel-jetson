@@ -1,12 +1,13 @@
 """
 Hardware and system information collection from a Jetson device via SSH.
 
-Provides individual getter functions (e.g. get_rhel_version, get_jetpack_version)
-that any test can call directly, plus a collect() convenience function that gathers
-everything at once (used by tests_suites/conftest.py to set global variables).
+Provides individual getter functions (e.g. get_rhel_version, get_l4t_version,
+get_jetpack_userspace_version) that any test can call directly, plus a collect()
+convenience function that gathers everything at once (used by tests_suites/conftest.py
+to set global variables).
 
 Usage:
-    from tests_resources.hardware_info import get_rhel_version, get_kernel_version
+    from tests_resources.hardware_info import get_rhel_version, get_l4t_version
     rhel = get_rhel_version(ssh)
 
     # Or collect everything at once:
@@ -69,17 +70,19 @@ def _parse_decimal(s: str) -> Optional[Union[float, str]]:
     return None
 
 
-def get_rhel_version(ssh) -> Optional[float]:
-    """Return RHEL version as float (e.g. 9.7), or None if not found."""
+def get_rhel_version(ssh) -> Optional[str]:
+    """Return RHEL version as string (e.g. '9.7', '9.10'), or None if not found.
+    Always returns a string to avoid float precision issues (e.g. float('9.10') == 9.1)."""
     rhel = _run(ssh, "cat /etc/redhat-release")
-    rhel_number = _parse_decimal(rhel)
-    return rhel_number if rhel_number else None
+    if not rhel:
+        return None
+    match = re.search(r"(\d+\.\d+)", rhel)
+    return match.group(1) if match else None
 
 
-def get_jetpack_version(ssh) -> Optional[Union[float, str]]:
-    """Return JetPack version from /etc/nv_tegra_release.
-    Returns str for X.Y.Z (e.g. '36.4.4'), float for X.Y, or None.
-    Note: this file comes from userspace RPMs (e.g. nvidia-jetpack-core), not kmod."""
+def get_l4t_version(ssh) -> Optional[Union[float, str]]:
+    """Return L4T version from /etc/nv_tegra_release (e.g. '36.5.0').
+    Returns str for X.Y.Z, float for X.Y, or None."""
     jetpack_raw = _run(ssh, "head -n 1 /etc/nv_tegra_release")
     if not jetpack_raw:
         return None
@@ -106,6 +109,66 @@ def get_jetpack_version(ssh) -> Optional[Union[float, str]]:
         except ValueError:
             pass
     return _parse_decimal(jetpack_raw)
+
+
+def get_jetpack_userspace_version(ssh) -> Optional[str]:
+    """Return JetPack userspace RPM version (e.g. '6.2.2') from nvidia-jetpack-*-core RPM."""
+    rpm_output = _run(ssh, "rpm -qa | grep 'nvidia-jetpack.*core'")
+    if not rpm_output:
+        return None
+    match = re.search(r"core-(\d+\.\d+\.\d+)", rpm_output)
+    return match.group(1) if match else None
+
+
+# Backward-compat alias: get_jetpack_version now returns userspace RPM version
+get_jetpack_version = get_jetpack_userspace_version
+
+
+def get_jetpack_kmod_version(ssh) -> Optional[str]:
+    """Return JetPack kmod RPM version (e.g. '6.2.2') from nvidia-jetpack-*-kmod RPM."""
+    rpm_output = _run(ssh, "rpm -qa | grep 'nvidia-jetpack.*kmod'")
+    if not rpm_output:
+        return None
+    match = re.search(r"kmod-(\d+\.\d+\.\d+)", rpm_output)
+    return match.group(1) if match else None
+
+
+def get_all_jetpack_rpm_versions(ssh) -> dict[str, str]:
+    """Return dict of {component: version} for all nvidia-jetpack RPMs."""
+    output = _run(ssh, "rpm -qa | grep nvidia-jetpack | sort")
+    if not output:
+        return {}
+    versions = {}
+    for line in output.strip().splitlines():
+        match = re.search(r"nvidia-jetpack-for-rhel-[\d.]+-(.+?)-(\d+\.\d+\.\d+)", line)
+        if match:
+            versions[match.group(1)] = match.group(2)
+    return versions
+
+
+def compare_versions(actual: Optional[Union[float, str]], target: Optional[str]) -> bool:
+    """Exact version comparison. Converts both to strings.
+    For kernel versions (target contains '-'): uses prefix match.
+    Returns True if they match."""
+    if actual is None or target is None:
+        return False
+    actual_str, target_str = str(actual), str(target)
+    if "-" in target_str:
+        return actual_str.startswith(target_str)
+    return actual_str == target_str
+
+
+def compare_versions_gte(actual: Optional[str], target: Optional[str]) -> bool:
+    """Return True if actual version >= target version.
+    Handles X.Y and X.Y.Z formats."""
+    if actual is None or target is None:
+        return False
+    actual_parts = [int(x) for x in str(actual).split(".")]
+    target_parts = [int(x) for x in str(target).split(".")]
+    max_len = max(len(actual_parts), len(target_parts))
+    actual_parts.extend([0] * (max_len - len(actual_parts)))
+    target_parts.extend([0] * (max_len - len(target_parts)))
+    return actual_parts >= target_parts
 
 
 def get_firmware_info(ssh) -> dict[str, Any]:
@@ -198,8 +261,11 @@ def collect(ssh) -> dict[str, Any]:
 
     Returns:
         Dict with keys (all None if value not found):
-        - rhel_version: float | None
-        - jetpack_version: float | str | None (str if X.Y.Z, float if X.Y)
+        - rhel_version: str | None (e.g. '9.7', '9.10')
+        - l4t_version: float | str | None (L4T from /etc/nv_tegra_release)
+        - jetpack_version: str | None (userspace RPM version, e.g. '6.2.2')
+        - jetpack_userspace_version: str | None (same as jetpack_version)
+        - jetpack_kmod_version: str | None (kmod RPM version)
         - firmware_version: float | str | None (str if X.Y.Z, float if X.Y)
         - firmware_type: str | None (e.g. "UEFI", "BIOS")
         - hardware_model_name: str | None
@@ -212,10 +278,16 @@ def collect(ssh) -> dict[str, Any]:
     """
     firmware = get_firmware_info(ssh)
     bootc = get_bootc_info(ssh)
+    l4t = get_l4t_version(ssh)
+    userspace = get_jetpack_userspace_version(ssh)
+    kmod = get_jetpack_kmod_version(ssh)
 
     return {
         "rhel_version": get_rhel_version(ssh),
-        "jetpack_version": get_jetpack_version(ssh),
+        "l4t_version": l4t,
+        "jetpack_version": userspace,
+        "jetpack_userspace_version": userspace,
+        "jetpack_kmod_version": kmod,
         "firmware_version": firmware["firmware_version"],
         "firmware_type": firmware["firmware_type"],
         "hardware_model_name": get_hardware_model_name(ssh),

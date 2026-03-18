@@ -95,8 +95,10 @@ When running pytest, the session collects hardware and system info from the Jets
 
 | Variable | Type | Description |
 |----------|------|-------------|
-| `RHEL_VERSION` | str or None | RHEL version string (e.g. from `/etc/redhat-release`). |
-| `JETPACK_VERSION` | float, str, or None | Jetpack version: str if X.Y.Z (2 dots), float if X.Y (1 dot). |
+| `RHEL_VERSION` | str or None | RHEL version as string (e.g. `'9.7'`, `'9.10'` from `/etc/redhat-release`). |
+| `L4T_VERSION` | float, str, or None | L4T version from `/etc/nv_tegra_release`: str if X.Y.Z (e.g. `'36.5.0'`), float if X.Y. |
+| `JETPACK_VERSION` | str or None | JetPack userspace RPM version (e.g. `'6.2.2'` from `nvidia-jetpack-*-core` RPM). |
+| `JETPACK_KMOD_VERSION` | str or None | JetPack kmod RPM version (e.g. `'6.2.2'` from `nvidia-jetpack-*-kmod` RPM). |
 | `FIRMWARE_VERSION` | float, str, or None | Firmware version: str if X.Y.Z (2 dots), float if X.Y (1 dot). |
 | `FIRMWARE_TYPE` | str or None | Firmware type (e.g. `UEFI`, `BIOS`). |
 | `HARDWARE_MODEL_NAME` | str or None | Hardware model name. |
