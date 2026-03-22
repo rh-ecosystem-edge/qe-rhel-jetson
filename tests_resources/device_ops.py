@@ -121,10 +121,7 @@ def reboot_and_reconnect(ssh, timeout=300, poll_interval=10):
 
             # Restore original boot order so Beaker can reclaim via PXE
             logger.info("Restoring original boot order: %s", original_boot_order)
-            new_ssh.sudo(
-                f"efibootmgr -o {original_boot_order}",
-                fail_on_rc=False, print_output=False,
-            )
+            new_ssh.sudo(f"efibootmgr -o {original_boot_order}", print_output=False)
 
             return new_ssh
         except Exception:

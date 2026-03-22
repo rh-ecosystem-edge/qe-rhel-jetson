@@ -16,7 +16,7 @@ class TestKmod:
 
     def test_tegra_devices(self, ssh):
         """Test Tegra device nodes are present (/dev/tegra*)."""
-        result = ssh.sudo("ls -la /dev/tegra*")
+        result = ssh.sudo("ls -la /dev/tegra*", fail_on_rc=False)
         assert result.exit_status == 0, f"Failed to list Tegra devices: {result.stderr}"
 
     def test_nvidia_kernel_modules(self, ssh):

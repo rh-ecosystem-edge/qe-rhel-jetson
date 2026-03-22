@@ -44,6 +44,8 @@ Known Issues
 import pytest
 import warnings
 from tests_resources.device_ops import get_systemd_target
+from logging import getLogger
+logger = getLogger(__name__)
 
 
 class TestDisplay:
@@ -68,7 +70,7 @@ class TestDisplay:
         # Step 2: Check if nvidia_drm is loaded
         drm_mod = ssh.run("lsmod | grep nvidia_drm", fail_on_rc=False)
         drm_loaded = drm_mod.exit_status == 0
-        print(f"drm_loaded: {drm_loaded}")
+        logger.info(f"[test_display_by_drm] drm_loaded: {drm_loaded}")
 
         # Step 3: Handle based on target + module state
         if systemd_target == "graphical.target" and not drm_loaded:

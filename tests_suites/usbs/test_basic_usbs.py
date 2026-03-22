@@ -16,7 +16,7 @@ class TestUSBs:
 
     def test_usb(self, ssh):
         """Test USB devices are present."""
-        result = ssh.sudo("ls -1 /sys/bus/usb/devices/")
+        result = ssh.sudo("ls -1 /sys/bus/usb/devices/", fail_on_rc=False)
         assert result.exit_status == 0, f"Failed to list USB devices: {result.stderr}"
         assert len(result.stdout.splitlines()) > 0, "No USB devices found"
 

@@ -35,6 +35,6 @@ class TestPVA:
             result = ssh.sudo(
                 "podman build --build-arg CACHEBUST={} --device nvidia.com/gpu=all {}".format(
                     datetime.now().timestamp(), tmp
-                )
+                ), fail_on_rc=False
             )
             assert result.exit_status == 0, f"PVA test failed: {result.stderr}"

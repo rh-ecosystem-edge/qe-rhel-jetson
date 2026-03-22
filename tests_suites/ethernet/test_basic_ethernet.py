@@ -13,6 +13,6 @@ class TestEthernet:
 
     def test_ethernet_driver_loaded(self, ssh):
         """Test Ethernet driver is loaded."""
-        result = ssh.run("lsmod | grep -iE 'eqos|stmmac|dwmac|r8169|e1000|igb|realtek|xgbe|nfp'")
+        result = ssh.run("lsmod | grep -iE 'eqos|stmmac|dwmac|r8169|e1000|igb|realtek|xgbe|nfp'", fail_on_rc=False)
         # Ethernet drivers may have various names, so we just check if command succeeds
         assert result.exit_status == 0, f"Failed to check Ethernet drivers: {result.stderr}"

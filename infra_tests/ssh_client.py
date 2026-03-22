@@ -56,11 +56,13 @@ class SSHConnection(Connection):
         )
 
         # Step 1: quick TCP check (fails here if host unreachable or you need ProxyJump)
+        # also, saving the socket to pre_connected_sock so we can use it for the paramiko connection.
+        pre_connected_sock = None
         try:
             logger.info("[SSH debug] Step 1: TCP connect to %s:%s ...", hostname, port)
             sock = socket.create_connection((hostname, port), timeout=timeout)
-            sock.close()
-            logger.info("[SSH debug] Step 1: TCP connect OK")
+            pre_connected_sock = sock
+            logger.info("[SSH debug] Step 1: TCP connect OK, and saved the socket")
         except OSError as e:
             logger.error("[SSH debug] Step 1 FAILED (TCP): %s", e)
             raise
@@ -75,6 +77,7 @@ class SSHConnection(Connection):
         connect_kwargs: dict = {
             "allow_agent": False,
             "look_for_keys": False,
+            "sock": pre_connected_sock, # use the pre-connected socket to avoid the paramiko's own address resolution (which handles IPv6→IPv4 fallback).
         }
         if key_filename:
             connect_kwargs["key_filename"] = key_filename
@@ -93,9 +96,10 @@ class SSHConnection(Connection):
             connect_kwargs=connect_kwargs,
         )
 
+        #This is needed because Beaker reprovisioning gives each Jetson a new host key every time, so it's never in known_hosts.
         self.client.set_missing_host_key_policy(paramiko.WarningPolicy())
 
-        # Step 3: Fabric SSH connect (retry on timeout - lab links can be flaky)
+        # Step 3: Fabric SSH connect (retry on failed handshake, or timeout- lab links can be flaky)
         last_error = None
         for attempt in range(1, 4):  # up to 3 attempts
             try:
@@ -113,6 +117,16 @@ class SSHConnection(Connection):
                 )
                 if attempt < 3:
                     time.sleep(2)
+                    # The previous socket is consumed/closed after a failed
+                    # handshake, so create a fresh one for the next attempt.
+                    try:
+                        new_sock = socket.create_connection((hostname, port), timeout=timeout)
+                        self.connect_kwargs["sock"] = new_sock
+                    except OSError as sock_err:
+                        logger.warning(
+                            "[SSH debug] Step 3: Socket reconnect failed: %s",
+                            sock_err,
+                        )
         if last_error is not None:
             logger.error(
                 "[SSH debug] Step 3: FAILED (Fabric) after 3 attempts: %s",
@@ -142,14 +156,13 @@ class SSHConnection(Connection):
         ]
         # Import here to avoid circular import (conftest imports ssh_client)
         from tests_suites import conftest as _conftest
-        # if bootc is available, add --transient to the dnf commands
+        # if bootc is available, add --transient to mutating dnf commands
         if _conftest.BOOTC_AVAILABLE:
-            # Split the command into parts to check the actual sub-command accurately
             cmd_parts = command.split()
-            if any(sub_cmd in cmd_parts for sub_cmd in MUTATING_DNF_COMMANDS):
-                # Ensure we don't double-add the flag if it's already there
-                if "--transient" not in command:
-                    command += " --transient"
+            if cmd_parts and cmd_parts[0] == "dnf":
+                if any(sub_cmd in cmd_parts for sub_cmd in MUTATING_DNF_COMMANDS):
+                    if "--transient" not in command:
+                        command += " --transient"
         return command
 
     def run(
@@ -173,7 +186,8 @@ class SSHConnection(Connection):
         command = self._mutate_command(command)
 
         if print_output:
-            print("\t\tRunning command:", command)
+            string_logger_formatted = f"\t\t[Fabric] Running command: {command}"
+            logger.info(string_logger_formatted)
 
         result = super().run(command, timeout=timeout, warn=True, hide=True)
         # Create a result-like object similar to Fabric's result
@@ -189,11 +203,12 @@ class SSHConnection(Connection):
         )()
 
         if print_output:
-            print("\t\tstdout:", result.stdout)
+            string_logger_formatted = f"\t\t[Fabric] stdout: \n{result.stdout}"
+            logger.info(string_logger_formatted)
 
         if fail_on_rc and result.exit_status != expect_rc:
             raise RuntimeError(
-                f"Command '{command}' failed with exit status {result.exit_status}. Expected {expect_rc}. Error: {result.stderr}. \n\t\tOutput: {result.stdout}"
+                f"Command '{command}' failed with exit status {result.exit_status}. Expected {expect_rc}. Error: {result.stderr}. \n\t\tOutput: \n{result.stdout}"
             )
 
         return result
@@ -220,7 +235,8 @@ class SSHConnection(Connection):
         command = self._mutate_command(command)
 
         if print_output:
-            print("\t\tRunning command:", command)
+            string_logger_formatted = f"\t\t[Fabric] Running command: {command}"
+            logger.info(string_logger_formatted)
 
         result = super().sudo(command, timeout=timeout, warn=True, hide=True)
         # Create a result-like object similar to Fabric's result
@@ -236,11 +252,12 @@ class SSHConnection(Connection):
         )()
 
         if print_output:
-            print("\t\tstdout:", result.stdout)
+            string_logger_formatted = f"\t\t[Fabric] stdout: \n{result.stdout}"
+            logger.info(string_logger_formatted)
 
         if fail_on_rc and result.exit_status != expect_rc:
             raise RuntimeError(
-                f"Command '{command}' failed with exit status {result.exit_status}. Expected {expect_rc}. Error: {result.stderr}. \n\t\tOutput: {result.stdout}"
+                f"Command '{command}' failed with exit status {result.exit_status}. Expected {expect_rc}. Error: {result.stderr}. \n\t\tOutput: \n{result.stdout}"
             )
 
         return result

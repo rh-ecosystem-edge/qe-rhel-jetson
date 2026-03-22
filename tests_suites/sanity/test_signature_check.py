@@ -5,7 +5,8 @@ Verifies that NVIDIA kernel modules are signed for Secure Boot compatibility.
 This ensures the modules will load correctly when Secure Boot is enabled.
 """
 import pytest
-
+from logging import getLogger
+logger = getLogger(__name__)
 
 NVIDIA_KERNEL_MODULES = [
     "nvgpu",
@@ -49,7 +50,7 @@ class TestKernelModuleSignatures:
                 unsigned_modules.append(module)
 
         if missing_modules:
-            print(f"Missing modules (not loaded): {missing_modules}")
+            logger.info(f"[test_nvidia_modules_are_signed] Missing modules (not loaded): {missing_modules}")
 
         assert not unsigned_modules, (
             f"The following NVIDIA kernel modules are NOT signed for Secure Boot:\n"
@@ -95,6 +96,6 @@ class TestKernelModuleSignatures:
             f"Signature info:\n{result.stdout}"
         )
 
-        print(f"nvgpu signature details:\n{result.stdout}")
+        logger.info(f"[test_nvidia_module_signature_details] nvgpu signature details:\n{result.stdout}")
 
     #TODO add secure boot check

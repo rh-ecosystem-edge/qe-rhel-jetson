@@ -80,6 +80,11 @@ Run with verbose output:
 pytest -v tests_suites/
 ```
 
+Run with log level:
+```bash
+pytest -v tests_suites/ --log-cli-level=INFO
+```
+
 ## How to Warn
 
 for more information look at tests_suites/WARNING_BEHAVIOR.md

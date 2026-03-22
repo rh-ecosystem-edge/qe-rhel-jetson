@@ -5,6 +5,8 @@ Covers nvidia-jetpack-tools: nvpmodel (power model) and nvfancontrol.
 import re
 import pytest
 from tests_suites import conftest as _conftest
+from logging import getLogger   
+logger = getLogger(__name__)
 
 
 def _power_modes_spec(spec):
@@ -23,7 +25,7 @@ def _parse_wattage_from_stdout(stdout):
     """Extract wattage values (e.g. 15, 30, 60) from nvpmodel output. Returns list of ints."""
     # Match numbers followed by 'W' (e.g. "15W", "60 W", "MODE_30W", "NV Power Mode: MODE_30W")
     matches = re.findall(r"(\d+)\s*W\b", stdout, re.IGNORECASE)
-    print(f"matches: {matches}")
+    logger.info(f"[test_basic_tools] _parse_wattage_from_stdout] matches: {matches}")
     return [int(m) for m in matches] if matches else []
 
 
@@ -37,7 +39,7 @@ class TestTools:
         assert kind in ("list", "range"), (
             f"power_modes in jetson_hardware_specs must be a list (specific) or {{min, max}} (range); got {power_modes_val!r}"
         )
-        result = ssh.run("nvpmodel -q")
+        result = ssh.run("nvpmodel -q", fail_on_rc=False)
         assert result.exit_status == 0, f"nvpmodel -q failed: {result.stderr}"
         assert result.stdout.strip(), "nvpmodel produced no output"
         # Check if the power model is a number in the second line of the output
@@ -64,8 +66,8 @@ class TestTools:
 
     def test_nvfancontrol_available(self, ssh):
         """Test nvfancontrol is available (nvidia-jetpack-tools)."""
-        which_result = ssh.run("which nvfancontrol")
+        which_result = ssh.run("which nvfancontrol", fail_on_rc=False)
         if not which_result.stdout.strip():
             pytest.skip("nvfancontrol not in PATH")
-        result = ssh.sudo("nvfancontrol -q")
+        result = ssh.sudo("nvfancontrol -q", fail_on_rc=False)
         assert result.exit_status == 0, f"nvfancontrol failed: {result.stderr}"
