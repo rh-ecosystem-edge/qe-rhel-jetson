@@ -5,8 +5,9 @@ import sys
 import os
 import subprocess
 from pathlib import Path
+from logging import getLogger
 
-
+logger = getLogger(__name__)
 USERNAME = os.environ.get("JETSON_USERNAME")
 PASSWORD = os.environ.get("JETSON_PASSWORD")
 KEY_PATH = os.environ.get("JETSON_KEY_PATH")
@@ -26,9 +27,9 @@ if key_filename and not os.path.exists(key_filename):
 with env() as client:
     with client.log_stream():
         client.storage.dut()
-        print("[wrapper] Storage connected to DUT")
+        logger.info("[wrapper] Storage connected to DUT")
         client.power.cycle()
-        print("[wrapper] DUT powered on")
+        logger.info("[wrapper] DUT powered on")
 
         with client.serial.pexpect() as p:
             p.logfile = sys.stdout.buffer
@@ -42,7 +43,7 @@ with env() as client:
                     got_login = True
                     break
                 else:
-                    print(f"\n[wrapper] Device stuck at grub> (attempt {attempt + 1}/3), sending 'exit' to force reboot...")
+                    logger.info(f"\n[wrapper] Device stuck at grub> (attempt {attempt + 1}/3), sending 'exit' to force reboot...")
                     p.sendline("exit")
                     time.sleep(10)
 
@@ -52,12 +53,12 @@ with env() as client:
             # Send Enter to get a fresh login: prompt
             p.sendline("")
             p.expect_exact("login:", timeout=30)
-            print("[wrapper] Successfully showing login prompt via console")
+            logger.info("[wrapper] Successfully showing login prompt via console")
 
             # password auth needs PermitRootLogin=yes to allow root password login.
             # (RHEL bootc defaults to prohibit-password which blocks root password login).
             if PASSWORD:
-                print("[wrapper] Configuring SSH root password login via serial console...")
+                logger.info("[wrapper] Configuring SSH root password login via serial console...")
                 # The first "login:" might match a systemd message during boot
                 # Send Enter to get a fresh, reliable login prompt.
                 time.sleep(2)
@@ -77,15 +78,16 @@ with env() as client:
                     " && echo WRAPPER_SSH_CONFIG_OK"
                 )
                 p.expect_exact("WRAPPER_SSH_CONFIG_OK", timeout=30)
-                print("[wrapper] SSH root login enabled and sshd restarted")
+                logger.info("[wrapper] SSH root login enabled and sshd restarted")
 
                 p.sendline("exit")
 
         # Wait for SSH service to be fully ready after sshd restart
-        print("[wrapper] Waiting for SSH service to start...")
+        logger.info("[wrapper] Waiting for SSH service to start...")
         time.sleep(10)
 
-        with TcpPortforwardAdapter(client=client.ssh.tcp) as addr:
+        ssh_client = client.ssh.tcp if hasattr(client.ssh, 'tcp') else client.ssh
+        with TcpPortforwardAdapter(client=ssh_client) as addr:
             os.environ["JETSON_HOST"] = addr[0]
             os.environ["JETSON_PORT"] = str(addr[1])
             os.environ["JUMPSTARTER_IN_USE"] = "1"
@@ -103,7 +105,7 @@ with env() as client:
             ) as ssh:
                 ssh.sudo("/usr/libexec/bootc-generic-growpart")
 
-            print(f"[wrapper] Launching pytest with JETSON_HOST={os.environ['JETSON_HOST']} "
+            logger.info(f"[wrapper] Launching pytest with JETSON_HOST={os.environ['JETSON_HOST']} "
                   f"JETSON_PORT={os.environ['JETSON_PORT']} "
                   f"JETSON_USERNAME={os.environ.get('JETSON_USERNAME')} "
                   f"JETSON_KEY_PATH={os.environ.get('JETSON_KEY_PATH', '(not set)')}")

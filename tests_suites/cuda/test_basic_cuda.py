@@ -23,9 +23,8 @@ class TestCUDA:
         tmp = ssh.run("mktemp -d").stdout.strip()
         ssh.put(FILE / "Dockerfile", f"{tmp}/Dockerfile")
         result = ssh.sudo(
-            "podman build --build-arg CACHEBUST={} --device nvidia.com/gpu=all {}".format(
-                datetime.now().timestamp(), tmp
-            )
+            "podman build --build-arg CACHEBUST={} --device nvidia.com/gpu=all {}".format(datetime.now().timestamp(), tmp)
+            , fail_on_rc=False
         )
         assert result.exit_status == 0, f"CUDA test failed: {result.stderr}"
 
@@ -33,7 +32,7 @@ class TestCUDA:
         """Test CUDA with NVIDIA deviceQuery sample (GPU properties)."""
         result = ssh.sudo(
             "podman run --rm --device nvidia.com/gpu=all {} deviceQuery".format(CUDA_SAMPLES_IMAGE),
-            timeout=120
+            timeout=120, fail_on_rc=False
         )
         assert result.exit_status == 0, f"CUDA deviceQuery failed: {result.stderr}"
         assert "CUDA" in result.stdout, "CUDA deviceQuery produced no CUDA output"
@@ -42,6 +41,6 @@ class TestCUDA:
         """Test CUDA with NVIDIA bandwidthTest sample (memory bandwidth)."""
         result = ssh.sudo(
             "podman run --rm --device nvidia.com/gpu=all {} bandwidthTest".format(CUDA_SAMPLES_IMAGE),
-            timeout=120
+            timeout=120, fail_on_rc=False
         )
         assert result.exit_status == 0, f"CUDA bandwidthTest failed: {result.stderr}"

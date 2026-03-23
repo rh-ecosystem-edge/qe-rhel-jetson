@@ -26,5 +26,6 @@ class TestVideoEncDec:
         else:
           result = ssh.sudo(
               "gst-launch-1.0 videotestsrc num-buffers=300 ! nvvidconv ! nvv4l2h264enc ! nvv4l2decoder ! fakesink"
+              , fail_on_rc=False
           )
         assert result.exit_status == 0, f"Video acceleration test failed: {result.stderr}"

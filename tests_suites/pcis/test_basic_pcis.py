@@ -5,7 +5,8 @@ Based on test_basic.py and test_basic_locally.py from edge-ai-image-pipelines.
 import re
 import pytest
 from tests_suites import conftest as _conftest
-
+from logging import getLogger
+logger = getLogger(__name__)
 
 def parse_lnkcap_lines(lspci_output: str) -> list[dict]:
     """
@@ -43,7 +44,7 @@ class TestPCIs:
 
     def test_pcie(self, ssh):
         """Test PCI devices are present."""
-        result = ssh.sudo("ls -1 /sys/bus/pci/devices/")
+        result = ssh.sudo("ls -1 /sys/bus/pci/devices/", fail_on_rc=False)
         assert result.exit_status == 0, f"Failed to list PCI devices: {result.stderr}"
         assert len(result.stdout.splitlines()) > 0, "No PCI devices found"
 
@@ -66,7 +67,7 @@ class TestPCIs:
         
         ssh.sudo("dnf install pciutils -y")
         
-        result = ssh.sudo("lspci -vv | grep -P 'LnkCap:'")
+        result = ssh.sudo("lspci -vv | grep -P 'LnkCap:'", fail_on_rc=False)
         assert result.exit_status == 0, "No PCIe LnkCap information found. Is lspci working?"
         
         detected_links = parse_lnkcap_lines(result.stdout)
@@ -106,7 +107,7 @@ class TestPCIs:
         )
         
         # Log what was found for informational purposes
-        print(f"\nPCIe capability check passed:")
-        print(f"  Expected generation: Gen{max_expected_gen} ({max_expected_speed})")
-        print(f"  Detected {len(detected_links)} link(s):")
-        print(detected_summary)
+        logger.info(f"\nPCIe capability check passed:")
+        logger.info(f"  Expected generation: Gen{max_expected_gen} ({max_expected_speed})")
+        logger.info(f"  Detected {len(detected_links)} link(s):")
+        logger.info(detected_summary)

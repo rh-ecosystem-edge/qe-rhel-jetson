@@ -1,8 +1,11 @@
 import pytest
 from tests_resources.device_ops import reboot_and_reconnect, set_kernel_arg, get_systemd_target
-from tests_suites.conftest import RHEL_VERSION
+from tests_suites import conftest as _conftest
 import os
 import warnings
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 @pytest.fixture(scope="class")
@@ -20,17 +23,17 @@ def ensure_pd_ignore_unused(ssh):
     - RHEL 9.7 + multi-user.target + missing + Jumpstarter -> skip (reboot kills tunnel)
     """
     # Only needed on RHEL 9.7; skip when version unknown or not 9.7
-    if RHEL_VERSION is None or RHEL_VERSION != "9.7":
+    if _conftest.RHEL_VERSION is None or _conftest.RHEL_VERSION != "9.7":
         yield ssh
         return
 
     # graphical.target loads nvidia_drm safely - no need to add pd_ignore_unused
     if get_systemd_target(ssh) == "graphical.target":
         yield ssh
-        print("graphical.target - skipping pd_ignore_unused")
+        logger.info("graphical.target - skipping pd_ignore_unused")
         return
 
-    print("setting pd_ignore_unused is needed (RHEL 9.7 + non graphical.target)")
+    logger.info("setting pd_ignore_unused is needed (RHEL 9.7 + non graphical.target)")
     needs_reboot = set_kernel_arg(ssh, "pd_ignore_unused")
     if not needs_reboot:
         yield ssh
@@ -38,7 +41,7 @@ def ensure_pd_ignore_unused(ssh):
 
     # Needs reboot to apply. On Jumpstarter this will pytest.skip().
     if os.environ.get("JUMPSTARTER_IN_USE"):
-        print("Reboot was needed to set pd_ignore_unused, but not supported through Jumpstarter SSH tunnel")
+        logger.info("Reboot was needed to set pd_ignore_unused, but not supported through Jumpstarter SSH tunnel")
         warnings.warn(
             "Reboot was needed to set pd_ignore_unused (see jumpstarter/README.md), "
             "but not supported through Jumpstarter SSH tunnel — the TCP port-forward breaks when the device goes down",

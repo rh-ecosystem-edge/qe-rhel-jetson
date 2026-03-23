@@ -322,8 +322,7 @@ def ssh():
             f"  - Firewall allows SSH connections\n"
             f"  - Network connectivity is available"
         )
-        print(f"\n{error_msg}\n")
-        logger.error(error_msg)
+        logger.error(f"\n[conftest] {error_msg}\n")
         raise
 
 
