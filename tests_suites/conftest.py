@@ -147,15 +147,16 @@ def _verify_target_versions() -> list[str]:
     if target is None:
         return []
     mismatches = []
+    # (actual, key, label, use_gte) - use_gte=True for firmware (allows newer versions)
     checks = [
-        (FIRMWARE_VERSION, "uefi_firmware_version", "UEFI firmware"),
-        (L4T_VERSION, "l4t_version", "L4T"),
-        (JETPACK_VERSION, "jetpack_userspace_version", "JetPack userspace"),
-        (KERNEL_VERSION, "kernel_version", "Kernel"),
+        (FIRMWARE_VERSION, "uefi_firmware_version", "UEFI firmware", True),
+        (L4T_VERSION, "l4t_version", "L4T", False),
+        (JETPACK_VERSION, "jetpack_userspace_version", "JetPack userspace", False),
+        (KERNEL_VERSION, "kernel_version", "Kernel", False),
     ]
-    for actual, key, label in checks:
+    for actual, key, label, use_gte in checks:
         expected = target.get(key)
-        if not compare_versions(actual, expected):
+        if not compare_versions(actual, expected, use_gte=use_gte):
             mismatches.append(f"{label}: actual={actual}, target={expected}")
     return mismatches
 

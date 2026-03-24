@@ -146,15 +146,19 @@ def get_all_jetpack_rpm_versions(ssh) -> dict[str, str]:
     return versions
 
 
-def compare_versions(actual: Optional[Union[float, str]], target: Optional[str]) -> bool:
-    """Exact version comparison. Converts both to strings.
+def compare_versions(actual: Optional[Union[float, str]], target: Optional[str], 
+                     use_gte: bool = False) -> bool:
+    """Version comparison. Converts both to strings.
     For kernel versions (target contains '-'): uses prefix match.
+    If use_gte=True: uses >= comparison (for firmware compatibility).
     Returns True if they match."""
     if actual is None or target is None:
         return False
     actual_str, target_str = str(actual), str(target)
     if "-" in target_str:
         return actual_str.startswith(target_str)
+    if use_gte:
+        return compare_versions_gte(actual_str, target_str)
     return actual_str == target_str
 
 

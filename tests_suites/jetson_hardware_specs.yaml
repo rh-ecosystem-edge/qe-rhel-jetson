@@ -14,7 +14,7 @@ _target_versions:
     l4t_version: "36.5.0"
     jetpack_userspace_version: "6.2.2"
     jetpack_kmod_version: "6.2.2"
-    uefi_firmware_version: "36.4.5"  # IGX Orin; AGX may differ
+    uefi_firmware_version: "36.4.4"  # Minimum required; actual may be higher
     kernel_version: "5.14.0-611.38.1"
 
 # -----------------------------------------------------------------------------
