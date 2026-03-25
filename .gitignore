@@ -25,6 +25,9 @@ beaker/ansible/vars/secrets.yml
 .claude/
 CLAUDE.md
 
+# Device logs (collected at test teardown)
+device_logs/
+
 # Jumpstarter resources
 config.toml
 output/
