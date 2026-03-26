@@ -71,6 +71,7 @@ BOOTC_AVAILABLE: bool = False
 BOOTC_VERSION: Optional[Union[float, str]] = None  # str if X.Y.Z, float if X.Y
 BOOTC_IMAGE_VERSION: Optional[Union[str]] = None
 BOOTC_IMAGE_URL: Optional[str] = None
+SECURE_BOOT_STATE: Optional[str] = None
 
 if JETSON_KEY_PATH: # key path provided, use key-based authentication
     key_path = os.path.expanduser(JETSON_KEY_PATH)
@@ -106,7 +107,7 @@ def _install_beaker_repo(ssh, rhel_version: Optional[str]):
     RHEL version is required to install the correct Beaker repository.
     Retries DNF operations up to 3 times to handle transient mirror failures.
     """
-    logger.info("Checking Beaker repositories exist on the Jetson...")
+    logger.info("[Setup] Checking Beaker repositories exist on the Jetson...")
     if rhel_version is None:
         raise ValueError("RHEL version not found, The environment is not a RHEL machine")
 
@@ -118,10 +119,10 @@ def _install_beaker_repo(ssh, rhel_version: Optional[str]):
     
     result = ssh.sudo("dnf repolist | grep beaker- | wc -l")
     if result.exit_status == 0 and int(result.stdout.strip()) >= 12:
-        logger.info("installing EPEL release for RHEL %s", rhel_version)
+        logger.info("[Setup] installing EPEL release for RHEL %s", rhel_version)
         ssh.sudo(cmd_epel)
     else:
-      logger.info("installing Beaker repositories and EPEL release for RHEL %s", rhel_version)
+      logger.info("[Setup] installing Beaker repositories and EPEL release for RHEL %s", rhel_version)
       for attempt in range(1, 4):
           try:
               ssh.sudo(cmd_appstream)
@@ -179,6 +180,16 @@ def get_hardware_spec(hardware_model_name: Optional[str]) -> Optional[Dict[str, 
                 return spec
     return None
 
+def fetch_hardware_logs(ssh):
+    """
+    Fetch hardware logs and outputs from the Jetson.
+    Logs and outputs are saved to qe-rhel-jetson/device_logs/ as a tar.gz archive.
+    """
+    from tests_resources.device_logs_collector import save_device_logs
+    output_dir = Path(__file__).parent.parent / "device_logs"
+    archive_path = save_device_logs(ssh, BOOTC_IMAGE_URL, output_dir)
+    logger.info("[Teardown] Device logs saved to: %s", archive_path)
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -208,6 +219,7 @@ def hardware_info_session():
     global FIRMWARE_VERSION, FIRMWARE_TYPE
     global HARDWARE_MODEL_NAME, KERNEL_VERSION, CPU_ARCH
     global BOOTC_AVAILABLE, BOOTC_VERSION, BOOTC_IMAGE_URL, BOOTC_IMAGE_VERSION
+    global SECURE_BOOT_STATE
     RHEL_VERSION = info.get("rhel_version")
     L4T_VERSION = info.get("l4t_version")
     JETPACK_VERSION = info.get("jetpack_version")
@@ -221,7 +233,7 @@ def hardware_info_session():
     BOOTC_VERSION = info.get("bootc_version")
     BOOTC_IMAGE_VERSION = info.get("bootc_image_version")
     BOOTC_IMAGE_URL = info.get("bootc_image_url")
-
+    SECURE_BOOT_STATE = info.get("secure_boot_state")
     # Skip entire session if hardware model is not in Testing Matrix (jetson_hardware_specs.yaml)
     if get_hardware_spec(HARDWARE_MODEL_NAME) is None:
         pytest.skip(
@@ -256,10 +268,11 @@ def hardware_info_session():
     print(f"4. JetPack version (RPM):    {JETPACK_VERSION}")
     print(f"5. JetPack kmod (RPM):       {JETPACK_KMOD_VERSION}")
     print(f"6. Firmware type/version:    {FIRMWARE_TYPE}{fw_ver}")
+    print(f"7. Secure boot state:        {SECURE_BOOT_STATE}")
     print("=" * 80)
-    print(f"7. Bootc available:          {BOOTC_AVAILABLE}")
-    print(f"8. Bootc image version:      {BOOTC_IMAGE_VERSION}")
-    print(f"9. Bootc image URL:          {BOOTC_IMAGE_URL}")
+    print(f"8. Bootc available:          {BOOTC_AVAILABLE}")
+    print(f"9. Bootc image version:      {BOOTC_IMAGE_VERSION}")
+    print(f"10. Bootc image URL:          {BOOTC_IMAGE_URL}")
     print("=" * 80 + "\n")
     yield
 
@@ -280,6 +293,26 @@ def beaker_repo_session(hardware_info_session):
         _install_beaker_repo(ssh, RHEL_VERSION)
     yield
 
+@pytest.fixture(scope="session", autouse=True)
+def fetch_hardware_logs_session(hardware_info_session):
+    """
+    Fetch hardware logs and outputs from the Jetson at session teardown.
+    Depends on hardware_info_session to ensure BOOTC_IMAGE_URL is available.
+    Logs are saved to qe-rhel-jetson/device_logs/ as a tar.gz archive.
+    """
+    yield
+    logger.info("[Teardown] Fetching hardware logs from the Jetson...")
+    with SSHConnection(
+        JETSON_HOST,
+        JETSON_USERNAME,
+        JETSON_PASSWORD or None,
+        JETSON_PORT,
+        JETSON_TIMEOUT,
+        key_filename=key_path,
+    ) as ssh:
+        fetch_hardware_logs(ssh)
+    logger.info("[Teardown] Hardware logs fetched successfully")
+
 @pytest.fixture(scope="class")
 def ssh():
     """
@@ -295,7 +328,7 @@ def ssh():
     hardware information at the beginning of the test session.
     """
     logger.info(
-        "[conftest] Using JETSON_HOST=%s JETSON_PORT=%s JETSON_USERNAME=%s JETSON_TIMEOUT=%s",
+        "[SSH Fixture] Using JETSON_HOST=%s JETSON_PORT=%s JETSON_USERNAME=%s JETSON_TIMEOUT=%s",
         JETSON_HOST, JETSON_PORT, JETSON_USERNAME, JETSON_TIMEOUT,
     )
     key_path = os.path.expanduser(JETSON_KEY_PATH) if JETSON_KEY_PATH else None
@@ -322,7 +355,7 @@ def ssh():
             f"  - Firewall allows SSH connections\n"
             f"  - Network connectivity is available"
         )
-        logger.error(f"\n[conftest] {error_msg}\n")
+        logger.error(f"\n[SSH Fixture] {error_msg}\n")
         raise
 
 

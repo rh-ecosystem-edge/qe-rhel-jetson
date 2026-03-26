@@ -80,10 +80,14 @@ def get_rhel_version(ssh) -> Optional[str]:
     return match.group(1) if match else None
 
 
+def get_tegra_release(ssh) -> str:
+    return _run(ssh, "cat /etc/nv_tegra_release")
+
+
 def get_l4t_version(ssh) -> Optional[Union[float, str]]:
     """Return L4T version from /etc/nv_tegra_release (e.g. '36.5.0').
     Returns str for X.Y.Z, float for X.Y, or None."""
-    jetpack_raw = _run(ssh, "head -n 1 /etc/nv_tegra_release")
+    jetpack_raw = get_tegra_release(ssh).splitlines()[0]
     if not jetpack_raw:
         return None
 
@@ -251,6 +255,13 @@ def get_bootc_info(ssh) -> dict[str, Any]:
     return info
 
 
+def get_secure_boot_state(ssh) -> str:
+    state = _run(ssh, "mokutil --sb-state").splitlines()[0].split(" ")[1].strip()
+    if state == "":
+        raise ValueError("Failed to get secure boot state")
+    return state
+
+
 def collect(ssh) -> dict[str, Any]:
     """
     Collect all hardware and system info from the remote host via SSH.
@@ -281,6 +292,7 @@ def collect(ssh) -> dict[str, Any]:
     l4t = get_l4t_version(ssh)
     userspace = get_jetpack_userspace_version(ssh)
     kmod = get_jetpack_kmod_version(ssh)
+    secure_boot_state = get_secure_boot_state(ssh)
 
     return {
         "rhel_version": get_rhel_version(ssh),
@@ -297,4 +309,6 @@ def collect(ssh) -> dict[str, Any]:
         "bootc_version": bootc["bootc_version"],
         "bootc_image_url": bootc["bootc_image_url"],
         "bootc_image_version": bootc["bootc_image_version"],
+        "secure_boot_state": secure_boot_state,
     }
+    
