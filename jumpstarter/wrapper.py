@@ -37,18 +37,39 @@ with env() as client:
 
             got_login = False
             for attempt in range(3):
-                # Look for either login: or grub> prompt
-                idx = p.expect_exact(["login:", "grub>"], timeout=600)
-                if idx == 0:
-                    got_login = True
-                    break
-                else:
-                    logger.info(f"\n[wrapper] Device stuck at grub> (attempt {attempt + 1}/3), sending 'exit' to force reboot...")
-                    p.sendline("exit")
-                    time.sleep(10)
+                try:
+                    # Look for login: or grub> prompt
+                    idx = p.expect_exact(["login:", "grub>"], timeout=600)
+                    if idx == 0:
+                        got_login = True
+                        break
+                    else:
+                        logger.info(f"\n[wrapper] Device stuck at grub> (attempt {attempt + 1}/3), sending 'exit' to force reboot...")
+                        p.sendline("exit")
+                        time.sleep(10)
+                except Exception:
+                    # Timeout — console may be unresponsive due to dutlink bug.
+                    # Send ENTER to check if we're in the dutlink internal shell (#>).
+                    logger.info(f"\n[wrapper] Timeout waiting for login/grub (attempt {attempt + 1}/3), sending ENTER to probe for dutlink shell...")
+                    p.sendline("")
+                    try:
+                        idx = p.expect_exact(["#>", "login:", "grub>"], timeout=30)
+                        if idx == 0:
+                            logger.info("[wrapper] Detected dutlink internal shell (#>), sending 'console' to re-enter serial console...")
+                            p.sendline("console")
+                            time.sleep(5)
+                        elif idx == 1:
+                            got_login = True
+                            break
+                        else:
+                            logger.info("[wrapper] Got grub> after probe, sending 'exit'...")
+                            p.sendline("exit")
+                            time.sleep(10)
+                    except Exception:
+                        logger.info("[wrapper] No recognizable prompt after probe, retrying...")
 
             if not got_login:
-                raise RuntimeError("[wrapper] Failed to reach login: prompt after grub> recovery retries")
+                raise RuntimeError("[wrapper] Failed to reach login: prompt after recovery retries")
 
             # Send Enter to get a fresh login: prompt
             p.sendline("")

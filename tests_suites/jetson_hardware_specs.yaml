@@ -15,7 +15,7 @@ _target_versions:
     jetpack_userspace_version: "6.2.2"
     jetpack_kmod_version: "6.2.2"
     uefi_firmware_version: "36.4.4"
-    kernel_version: "5.14.0-611.38.1"
+    kernel_version: "5.14.0-611.42.1"
 
 # -----------------------------------------------------------------------------
 # Shared templates (anchors for merge; not used as match keys)
