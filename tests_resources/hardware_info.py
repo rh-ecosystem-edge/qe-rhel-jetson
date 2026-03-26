@@ -40,15 +40,6 @@ def _run_sudo(ssh, command: str, timeout: Optional[int] = 30) -> str:
         logger.debug("Command sudo %r failed: %s", command, e)
         return ""
 
-def _run_log(ssh, command: str, timeout: int = 30, sudo: bool = False) -> tuple[str, int, str, str]:
-    """Run command for log collection. Returns (command, exit_status, stdout, stderr).
-    Raises RuntimeError on SSH/transport failures."""
-    try:
-        full_cmd = f"sudo {command}" if sudo else command
-        result = ssh.run(full_cmd, timeout=timeout, fail_on_rc=False, print_output=False)
-        return (command, result.exit_status, (result.stdout or "").strip(), (result.stderr or "").strip())
-    except (OSError, TimeoutError, EOFError) as e:
-        raise RuntimeError(f"SSH/transport error running '{command}': {e}")
 
 def _parse_decimal(s: str) -> Optional[Union[float, str]]:
     """
@@ -89,10 +80,14 @@ def get_rhel_version(ssh) -> Optional[str]:
     return match.group(1) if match else None
 
 
+def get_tegra_release(ssh) -> str:
+    return _run(ssh, "cat /etc/nv_tegra_release")
+
+
 def get_l4t_version(ssh) -> Optional[Union[float, str]]:
     """Return L4T version from /etc/nv_tegra_release (e.g. '36.5.0').
     Returns str for X.Y.Z, float for X.Y, or None."""
-    jetpack_raw = _run(ssh, "head -n 1 /etc/nv_tegra_release")
+    jetpack_raw = get_tegra_release(ssh).splitlines()[0]
     if not jetpack_raw:
         return None
 
@@ -260,6 +255,13 @@ def get_bootc_info(ssh) -> dict[str, Any]:
     return info
 
 
+def get_secure_boot_state(ssh) -> str:
+    state = _run(ssh, "mokutil --sb-state").splitlines()[0].split(" ")[1].strip()
+    if state == "":
+        raise ValueError("Failed to get secure boot state")
+    return state
+
+
 def collect(ssh) -> dict[str, Any]:
     """
     Collect all hardware and system info from the remote host via SSH.
@@ -290,7 +292,7 @@ def collect(ssh) -> dict[str, Any]:
     l4t = get_l4t_version(ssh)
     userspace = get_jetpack_userspace_version(ssh)
     kmod = get_jetpack_kmod_version(ssh)
-    secure_boot_state = get_log_secure_boot_state(ssh)
+    secure_boot_state = get_secure_boot_state(ssh)
 
     return {
         "rhel_version": get_rhel_version(ssh),
@@ -307,73 +309,6 @@ def collect(ssh) -> dict[str, Any]:
         "bootc_version": bootc["bootc_version"],
         "bootc_image_url": bootc["bootc_image_url"],
         "bootc_image_version": bootc["bootc_image_version"],
-        "secure_boot_state": secure_boot_state[2].splitlines()[0].split(" ")[1].strip() if secure_boot_state[2] else None,
+        "secure_boot_state": secure_boot_state,
     }
-
-# ---------------------------------------------------------------------------
-# Log-fetching functions for device diagnostics (used by _run_log)
-# Each returns (command, exit_status, stdout, stderr).
-# ---------------------------------------------------------------------------
-
-def get_log_secure_boot_state(ssh) -> tuple[str, int, str, str]:
-    return _run_log(ssh, "mokutil --sb-state")
-
-
-def get_log_modinfo_host1x(ssh) -> tuple[str, int, str, str]:
-    return _run_log(ssh, "modinfo host1x | head -5")
-
-
-def get_log_modinfo_tegra_drm(ssh) -> tuple[str, int, str, str]:
-    return _run_log(ssh, "modinfo tegra_drm | head -5")
-
-
-def get_log_modinfo_nvgpu(ssh) -> tuple[str, int, str, str]:
-    return _run_log(ssh, "modinfo nvgpu | head -5")
-
-
-def get_log_module_files_updates(ssh) -> tuple[str, int, str, str]:
-    return _run_log(ssh, "ls -la /lib/modules/$(uname -r)/updates/")
-
-
-def get_log_nvidia_modules_dep(ssh) -> tuple[str, int, str, str]:
-    return _run_log(ssh, "grep nvidia /lib/modules/$(uname -r)/modules.dep")
-
-
-def get_log_modprobe_nvidia(ssh) -> tuple[str, int, str, str]:
-    return _run_log(ssh, "modprobe -v nvidia 2>&1", sudo=True)
-
-
-def get_log_journalctl_current_boot(ssh) -> tuple[str, int, str, str]:
-    return _run_log(ssh, "journalctl -b", timeout=120, sudo=True)
-
-
-def get_log_journalctl_all(ssh) -> tuple[str, int, str, str]:
-    return _run_log(ssh, "journalctl", timeout=180, sudo=True)
-
-
-def get_log_dmesg_all(ssh) -> tuple[str, int, str, str]:
-    return _run_log(ssh, "dmesg", timeout=60, sudo=True)
-
-
-def get_log_dmesg_nvidia_errors(ssh) -> tuple[str, int, str, str]:
-    return _run_log(ssh, "dmesg | grep -iE \"module.*verif|signature|PKCS|nvidia|Unknown.symbol\"", timeout=60, sudo=True)
-
-
-def get_log_nvidia_rpms(ssh) -> tuple[str, int, str, str]:
-    return _run_log(ssh, "rpm -qa | grep -i nvidia")
-
-
-def get_log_nvidia_loaded_modules(ssh) -> tuple[str, int, str, str]:
-    return _run_log(ssh, "lsmod | grep -i nvidia")
-
-
-def get_log_tegra_release(ssh) -> tuple[str, int, str, str]:
-    return _run_log(ssh, "cat /etc/nv_tegra_release")
-
-
-def get_log_boot_cmdline(ssh) -> tuple[str, int, str, str]:
-    return _run_log(ssh, "cat /proc/cmdline")
-
-
-def get_log_systemctl_failed(ssh) -> tuple[str, int, str, str]:
-    return _run_log(ssh, "systemctl --failed")
+    
