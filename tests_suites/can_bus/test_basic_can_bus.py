@@ -48,7 +48,7 @@ class TestCANBus:
 
         dump_log = "/tmp/candump_loopback.log"
         try:
-            ssh.sudo("dnf install can-utils -y") # for candump and cansend cli tools
+            ssh.sudo("dnf install can-utils -y --nogpgcheck") # for candump and cansend cli tools
             # enable CAN driver
             ssh.sudo(f"ip link set {can_interface} type can bitrate 500000 loopback off") # verify the loopback is off before enabling it
             ssh.sudo(f"ip link set {can_interface} type can bitrate 500000 loopback on")

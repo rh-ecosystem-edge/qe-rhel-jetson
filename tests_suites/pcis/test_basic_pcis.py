@@ -64,7 +64,7 @@ class TestPCIs:
         if not pci_spec:
             pytest.skip("No PCIe spec defined for this hardware")
         
-        ssh.sudo("dnf install pciutils -y")
+        ssh.sudo("dnf install pciutils -y --nogpgcheck")
         
         result = ssh.sudo("lspci -vv | grep -P 'LnkCap:'")
         assert result.exit_status == 0, "No PCIe LnkCap information found. Is lspci working?"

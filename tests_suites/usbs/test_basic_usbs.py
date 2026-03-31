@@ -36,7 +36,7 @@ class TestUSBs:
         match among themselves.
         """
         spec = _conftest.get_hardware_spec(_conftest.HARDWARE_MODEL_NAME)
-        ssh.sudo("dnf install usbutils -y")  # for lsusb cli tool
+        ssh.sudo("dnf install usbutils -y --nogpgcheck")  # for lsusb cli tool
         usbs = spec.get("usbs")
 
         # Group spec by (ports, speed): count controllers with identical config
