@@ -1,4 +1,5 @@
 from jumpstarter.common.utils import env
+from jumpstarter.streams.encoding import Compression
 from jumpstarter_driver_network.adapters import TcpPortforwardAdapter
 import time
 import sys
@@ -12,10 +13,11 @@ logger = getLogger(__name__)
 USERNAME = os.environ.get("JETSON_USERNAME")
 PASSWORD = os.environ.get("JETSON_PASSWORD")
 KEY_PATH = os.environ.get("JETSON_KEY_PATH")
+DISK_IMAGE_PATH = os.environ.get("DISK_IMAGE_PATH", "") # path to the disk.raw.xz image to be flashed
 
 EXPECTED_RHEL_MAJOR = os.environ.get("EXPECTED_RHEL_MAJOR", "9") # expected rhel version
-MAX_WRONG_OS_RETRIES = 2 # max number of times to try to fix the wrong OS
-CI_DEFAULT_PASSWORD = "redhat"
+MAX_WRONG_OS_RETRIES = 3 # max number of times to try to fix the wrong OS
+CI_DEFAULT_PASSWORD = "redhat" # default password for the CI, which run for time to time and reflash to different version of the image
 
 if USERNAME is None:
     raise ValueError("JETSON_USERNAME must be set when running tests over jumpstarter")
@@ -56,10 +58,12 @@ def _detect_wrong_os(boot_output):
 
 
 def _fix_efi_via_serial(p):
-    """Log into wrong OS and fix EFI boot entries to prioritize USB (/dev/sda).
+    """Log into wrong OS and remove all OS-related EFI boot entries.
 
     Uses CI default password ("redhat") to log into the NVMe OS, removes all
-    existing RHEL boot entries, and creates a new entry for the USB disk.
+    existing OS boot entries. Does NOT create new entries — relies on the
+    hardware USB fallback (e.g. Boot0001 SanDisk) which doesn't use partition
+    UUIDs and always works after a flash.
     """
     logger.info("[wrapper] Logging into wrong OS to fix EFI boot entries...")
 
@@ -72,48 +76,152 @@ def _fix_efi_via_serial(p):
     p.expect(r"[#\$]", timeout=30)
     logger.info("[wrapper] Logged into wrong OS with CI default password")
 
-    # Remove all Red Hat / RHEL boot entries
+    # Silence kernel console messages — they share the serial port (console=ttyTCU0)
+    # and can split command output, causing pexpect markers to be unmatched
+    p.sendline("dmesg -n 1 && echo WRAPPER_DMESG_OK")
+    p.expect_exact("WRAPPER_DMESG_OK", timeout=15)
+    logger.info("[wrapper] Kernel console messages silenced")
+
+    # Show current EFI boot entries for debugging
+    p.sendline("efibootmgr -v && echo WRAPPER_EFI_LIST_OK")
+    p.expect_exact("WRAPPER_EFI_LIST_OK", timeout=30)
+    logger.info("[wrapper] Current EFI entries:\n%s", p.before)
+
+    # Remove ALL OS-related boot entries (Red Hat, RHEL, Bootc, Jumpstarter, shim)
+    # Do NOT create any new entries — rely on hardware USB fallback
+    # Filter with '^Boot[0-9]' first to exclude BootCurrent/BootOrder info lines
     remove_cmd = (
-        "for num in $(efibootmgr | grep -iE 'Red Hat|RHEL' "
+        "for num in $(efibootmgr | grep '^Boot[0-9]' "
+        "| grep -iE 'Red Hat|RHEL|Bootc|Jumpstarter|shim|redhat' "
         "| awk '{print substr($1,5,4)}'); "
-        "do efibootmgr -b $num -B 2>/dev/null; done "
+        "do echo \"Removing Boot$num\"; efibootmgr -b $num -B 2>/dev/null; done "
         "&& echo WRAPPER_EFI_REMOVE_OK"
     )
     p.sendline(remove_cmd)
     p.expect_exact("WRAPPER_EFI_REMOVE_OK", timeout=30)
-    logger.info("[wrapper] Removed existing RHEL/Red Hat EFI boot entries")
+    logger.info("[wrapper] Removed all OS-related EFI boot entries")
 
-    # Create new boot entry for USB disk (/dev/sda, partition 1)
-    create_cmd = (
-        "efibootmgr -c -d /dev/sda -p 1 -L 'RHEL Bootc Jumpstarter' "
-        "-l '\\EFI\\redhat\\shimaa64.efi' "
-        "&& echo WRAPPER_EFI_CREATE_OK"
+    # Reorder boot entries: put SanDisk USB first to avoid network boot timeouts
+    # MUST be a single sendline — multiple sendlines interleave on serial console
+    reorder_cmd = (
+        "U=$(efibootmgr|grep -i SanDisk|head -1|awk '{print substr($1,5,4)}') && "
+        "O=$(efibootmgr|grep ^BootOrder:|awk '{print $2}') && "
+        "R=$(echo $O|sed \"s/$U,//;s/,$U//;s/$U//\") && "
+        "efibootmgr -o $U,$R && "
+        "echo WRAPPER_EFI_REORDER_OK || echo WRAPPER_EFI_REORDER_OK"
     )
-    p.sendline(create_cmd)
-    p.expect_exact("WRAPPER_EFI_CREATE_OK", timeout=30)
-    logger.info("[wrapper] Created new UEFI boot entry for USB (/dev/sda)")
+    p.sendline(reorder_cmd)
+    # expect_exact matches the echo first (harmless), then the verify step
+    # waits for the actual command to complete before proceeding
+    p.expect_exact("WRAPPER_EFI_REORDER_OK", timeout=30)
+    logger.info("[wrapper] Boot order updated — SanDisk USB is first")
+
+    # Show remaining entries for verification
+    p.sendline("efibootmgr -v && echo WRAPPER_EFI_VERIFY_OK")
+    p.expect_exact("WRAPPER_EFI_VERIFY_OK", timeout=30)
+    logger.info("[wrapper] Remaining EFI entries:\n%s", p.before)
 
     p.sendline("exit")
     time.sleep(2)
-    logger.info("[wrapper] EFI boot fix complete, will power cycle to retry boot from USB")
+    logger.info("[wrapper] EFI boot fix complete, will re-flash and retry boot from USB")
+
+
+def _handle_emergency(p):
+    """Handle emergency mode by trying password login + exit, repeating if needed.
+
+    Each round: try CI_DEFAULT_PASSWORD ("redhat") then the user's PASSWORD.
+    If a password works: logs in, sends "exit" to continue boot, waits for login prompt.
+    If emergency reappears after "exit": repeats the password+exit cycle.
+
+    Raises RuntimeError if no password works or emergency keeps reappearing.
+    """
+    MAX_EMERGENCY_ROUNDS = 3
+
+    for round_num in range(MAX_EMERGENCY_ROUNDS):
+        # Try each password
+        logged_in = False
+        for pwd_label, pwd in [("CI default (redhat)", CI_DEFAULT_PASSWORD), ("configured bootc", PASSWORD)]:
+            if not pwd:
+                continue
+            logger.info("[wrapper] Emergency round %d: trying %s password...", round_num + 1, pwd_label)
+            p.sendline(pwd)
+            try:
+                idx = p.expect([r"[#\$]", "Login incorrect", "Give root password"], timeout=15)
+                if idx == 0:
+                    logged_in = True
+                    logger.info("[wrapper] Emergency login succeeded with %s password", pwd_label)
+                    break
+                logger.info("[wrapper] %s password rejected", pwd_label)
+            except Exception:
+                logger.info("[wrapper] %s password attempt failed (timeout/error)", pwd_label)
+                continue
+
+        if not logged_in:
+            raise RuntimeError(
+                "[wrapper] Emergency mode: neither the CI default password ('redhat') "
+                "nor the configured root password for the bootc image worked. "
+                "Cannot continue. Please verify the root password is correct in "
+                "config.toml and that the image was built with the expected credentials."
+            )
+
+        # Got shell — silence kernel console messages first, then fix fstab
+        p.sendline("dmesg -n 1")
+        time.sleep(1)
+
+        logger.info("[wrapper] Fixing /boot/efi fstab entry to prevent emergency mode loop...")
+        p.sendline("sed -i '/boot\\/efi/s/^/#/' /etc/fstab && echo WRAPPER_FSTAB_FIX_OK")
+        try:
+            p.expect_exact("WRAPPER_FSTAB_FIX_OK", timeout=15)
+            logger.info("[wrapper] /boot/efi commented out in fstab")
+        except Exception:
+            logger.info("[wrapper] fstab fix command did not confirm (may not have /boot/efi entry)")
+
+        logger.info("[wrapper] Sending 'exit' to continue boot past emergency mode...")
+        p.sendline("exit")
+        time.sleep(5)
+
+        # Wait for login prompt or another emergency
+        idx2 = p.expect_exact(["login:", "Give root password"], timeout=120)
+        if idx2 == 0:
+            logger.info("[wrapper] Got login prompt after emergency recovery (round %d)", round_num + 1)
+            return True
+        else:
+            logger.info("[wrapper] Emergency mode reappeared after exit (round %d/%d), retrying...",
+                        round_num + 1, MAX_EMERGENCY_ROUNDS)
+
+    # Password works but emergency keeps looping — signal caller to try NVMe boot fallback
+    logger.info(
+        "[wrapper] Emergency mode keeps reappearing after %d rounds of password login + exit. "
+        "Will power cycle without USB to boot NVMe and fix EFI entries.",
+        MAX_EMERGENCY_ROUNDS
+    )
+    return False
 
 
 def _wait_for_login(p):
-    """Wait for login: prompt, handling grub> and dutlink recovery.
+    """Wait for login: prompt, handling grub>, dutlink, and emergency mode recovery.
 
     Returns True if login prompt was reached, False otherwise.
+    Raises RuntimeError if emergency mode password login fails.
     """
     got_login = False
     for attempt in range(3):
         try:
-            idx = p.expect_exact(["login:", "grub>"], timeout=600)
+            idx = p.expect_exact(["login:", "grub>", "Give root password"], timeout=600)
             if idx == 0:
                 got_login = True
                 break
-            else:
+            elif idx == 1:
                 logger.info(f"\n[wrapper] Device stuck at grub> (attempt {attempt + 1}/3), sending 'exit' to force reboot...")
                 p.sendline("exit")
                 time.sleep(10)
+            elif idx == 2:
+                logger.info(f"\n[wrapper] Emergency mode detected (attempt {attempt + 1}/3)")
+                if _handle_emergency(p):
+                    got_login = True
+                    break
+        except RuntimeError:
+            raise  # don't swallow RuntimeError from _handle_emergency
         except Exception:
             logger.info(f"\n[wrapper] Timeout waiting for login/grub (attempt {attempt + 1}/3), sending ENTER to probe for dutlink shell...")
             p.sendline("")
@@ -126,7 +234,7 @@ def _wait_for_login(p):
                 elif idx == 1:
                     got_login = True
                     break
-                else:
+                elif idx == 2:
                     logger.info("[wrapper] Got grub> after probe, sending 'exit'...")
                     p.sendline("exit")
                     time.sleep(10)
@@ -139,9 +247,21 @@ def _wait_for_login(p):
 with env() as client:
     with client.log_stream():
 
+        # When emergency mode can't be resolved via password+exit, skip storage.dut()
+        # on the next attempt so the device boots from NVMe. The wrong OS detection
+        # will then fix EFI entries and re-flash, allowing a clean USB boot after.
+        force_nvme_boot = False
+
         for boot_attempt in range(MAX_WRONG_OS_RETRIES + 1):
-            client.storage.dut()
-            logger.info("[wrapper] Storage connected to DUT")
+            wrong_os = False
+
+            if force_nvme_boot:
+                logger.info("[wrapper] Skipping storage.dut() — forcing NVMe boot to fix EFI entries")
+                force_nvme_boot = False
+            else:
+                client.storage.dut()
+                logger.info("[wrapper] Storage connected to DUT")
+
             client.power.cycle()
             logger.info("[wrapper] DUT powered on")
 
@@ -150,7 +270,20 @@ with env() as client:
                 time.sleep(30)
 
                 if not _wait_for_login(p):
-                    raise RuntimeError("[wrapper] Failed to reach login: prompt after recovery retries")
+                    # Could not reach login prompt. Possible causes:
+                    # - Emergency mode looping (password works but system can't boot)
+                    # - Timeout / grub stuck
+                    # _handle_emergency raises RuntimeError if password fails,
+                    # so this path means either emergency looping or other failure.
+                    # Either way: power cycle without USB → boot NVMe → EFI fix.
+                    logger.info(
+                        f"[wrapper] Failed to reach login prompt (attempt {boot_attempt + 1}/"
+                        f"{MAX_WRONG_OS_RETRIES + 1}). Will boot NVMe next to fix EFI..."
+                    )
+                    if boot_attempt >= MAX_WRONG_OS_RETRIES:
+                        raise RuntimeError("[wrapper] Failed to reach login: prompt after all retries")
+                    force_nvme_boot = True
+                    continue
 
                 # Check if device booted into the wrong OS (e.g., RHEL 10 from NVMe)
                 wrong_os, detected_version = _detect_wrong_os(p.before)
@@ -168,36 +301,49 @@ with env() as client:
                         f"Fixing EFI boot entries (attempt {boot_attempt + 1}/{MAX_WRONG_OS_RETRIES})..."
                     )
                     _fix_efi_via_serial(p)
-                    continue  # exits serial context, loops back to power cycle
+                    # exits serial context, then re-flash below before retrying
 
-                # Correct OS — proceed with SSH configuration
-                p.sendline("")
-                p.expect_exact("login:", timeout=30)
-                logger.info("[wrapper] Successfully showing login prompt via console")
-
-                if PASSWORD:
-                    logger.info("[wrapper] Configuring SSH root password login via serial console...")
-                    time.sleep(2)
+                else:
+                    # Correct OS — proceed with SSH configuration
                     p.sendline("")
                     p.expect_exact("login:", timeout=30)
-                    p.sendline(USERNAME)
-                    p.expect("assword:", timeout=30)
-                    p.sendline(PASSWORD)
-                    p.expect(r"[#\$]", timeout=30)
+                    logger.info("[wrapper] Successfully showing login prompt via console")
 
-                    p.sendline(
-                        "echo 'PermitRootLogin yes' > /etc/ssh/sshd_config.d/01-permitrootlogin.conf"
-                        " && chmod 644 /etc/ssh/sshd_config.d/01-permitrootlogin.conf"
-                        " && systemctl restart sshd"
-                        " && echo WRAPPER_SSH_CONFIG_OK"
+                    if PASSWORD:
+                        logger.info("[wrapper] Configuring SSH root password login via serial console...")
+                        time.sleep(2)
+                        p.sendline("")
+                        p.expect_exact("login:", timeout=30)
+                        p.sendline(USERNAME)
+                        p.expect("assword:", timeout=30)
+                        p.sendline(PASSWORD)
+                        p.expect(r"[#\$]", timeout=30)
+
+                        p.sendline(
+                            "echo 'PermitRootLogin yes' > /etc/ssh/sshd_config.d/01-permitrootlogin.conf"
+                            " && chmod 644 /etc/ssh/sshd_config.d/01-permitrootlogin.conf"
+                            " && systemctl restart sshd"
+                            " && echo WRAPPER_SSH_CONFIG_OK"
+                        )
+                        p.expect_exact("WRAPPER_SSH_CONFIG_OK", timeout=30)
+                        logger.info("[wrapper] SSH root login enabled and sshd restarted")
+
+                        p.sendline("exit")
+
+                    break  # correct OS booted and SSH configured
+
+            # If wrong OS was detected, re-flash before retrying boot
+            if wrong_os:
+                if DISK_IMAGE_PATH:
+                    logger.info(f"[wrapper] Re-flashing image: {DISK_IMAGE_PATH}")
+                    client.storage.flash(DISK_IMAGE_PATH, compression=Compression.XZ)
+                    logger.info("[wrapper] Re-flash complete")
+                else:
+                    logger.warning(
+                        "[wrapper] DISK_IMAGE_PATH not set — skipping re-flash. "
+                        "Set DISK_IMAGE_PATH to the .raw.xz image path for automatic re-flash."
                     )
-                    p.expect_exact("WRAPPER_SSH_CONFIG_OK", timeout=30)
-                    logger.info("[wrapper] SSH root login enabled and sshd restarted")
-
-                    p.sendline("exit")
-
-            # Correct OS booted and SSH configured — break out of retry loop
-            break
+                continue  # retry boot
         else:
             raise RuntimeError(
                 f"[wrapper] Failed to boot correct OS (RHEL {EXPECTED_RHEL_MAJOR}) "

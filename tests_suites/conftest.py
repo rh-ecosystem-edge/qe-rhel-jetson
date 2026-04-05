@@ -113,7 +113,7 @@ def _install_beaker_repo(ssh, rhel_version: Optional[str]):
 
     main_rhel_version = str(rhel_version).split(".")[0]
     # declare commands to install Beaker repositories and EPEL release
-    cmd_epel = f"dnf install https://dl.fedoraproject.org/pub/epel/epel-release-latest-{main_rhel_version}.noarch.rpm -y"
+    cmd_epel = f"dnf install https://dl.fedoraproject.org/pub/epel/epel-release-latest-{main_rhel_version}.noarch.rpm -y --nogpgcheck"
     cmd_appstream = f"dnf config-manager --add-repo http://download.eng.rdu.redhat.com/released/rhel-{main_rhel_version}/RHEL-{main_rhel_version}/{rhel_version}.0/AppStream/aarch64/os/"
     cmd_baseos = f"dnf config-manager --add-repo http://download.eng.rdu.redhat.com/released/rhel-{main_rhel_version}/RHEL-{main_rhel_version}/{rhel_version}.0/BaseOS/aarch64/os/"
     
