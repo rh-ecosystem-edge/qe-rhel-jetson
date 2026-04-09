@@ -162,7 +162,7 @@ class SSHConnection(Connection):
             if cmd_parts and cmd_parts[0] == "dnf":
                 if any(sub_cmd in cmd_parts for sub_cmd in MUTATING_DNF_COMMANDS):
                     if "--transient" not in command:
-                        command += " --transient"
+                        command += " --transient --nogpgcheck"
         return command
 
     def run(

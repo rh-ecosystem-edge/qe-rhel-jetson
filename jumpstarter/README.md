@@ -80,6 +80,8 @@ sudo podman run --rm --privileged \
 ```bash
 xz ./output/image/disk.raw
 # Result: ./output/image/disk.raw.xz
+export DISK_IMAGE_PATH="<full path to disk.raw.xz>"
+# Please provide ENV system for disk location
 ```
 
 ---
