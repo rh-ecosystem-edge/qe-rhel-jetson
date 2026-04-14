@@ -136,23 +136,24 @@ def _install_beaker_repo(ssh, rhel_version: Optional[str]):
               else:
                   raise
 
-def _get_target_versions(rhel_version: Optional[str]) -> Optional[Dict[str, str]]:
-    """Return target version dict for the given RHEL version, or None."""
+def _get_target_versions(jetpack_userspace_version: Optional[str]) -> Optional[Dict[str, str]]:
+    """Return target version dict for the given Jetpack version, or None."""
     specs = _load_hardware_specs()
     targets = specs.get("_target_versions", {})
-    return targets.get(str(rhel_version)) if rhel_version else None
+    return targets.get(str(jetpack_userspace_version)) if jetpack_userspace_version else None
 
 def _verify_target_versions() -> list[str]:
     """Verify detected versions match targets. Returns list of mismatch messages."""
-    target = _get_target_versions(RHEL_VERSION)
+    target = _get_target_versions(JETPACK_VERSION)
     if target is None:
         return []
     mismatches = []
     checks = [
+        (RHEL_VERSION, "rhel_version", "RHEL"),
         (FIRMWARE_VERSION, "uefi_firmware_version", "UEFI firmware"),
         (L4T_VERSION, "l4t_version", "L4T"),
-        (JETPACK_VERSION, "jetpack_userspace_version", "JetPack userspace"),
         (KERNEL_VERSION, "kernel_version", "Kernel"),
+        # kmod version is not checked here, it is checked in sanity/test_version_check.py
     ]
     for actual, key, label in checks:
         expected = target.get(key)
@@ -241,13 +242,27 @@ def hardware_info_session():
             "Add the device to tests_suites/jetson_hardware_specs.yaml to run tests."
         )
 
-    # Skip entire session if RHEL version has no target versions defined
-    target = _get_target_versions(RHEL_VERSION)
+    # Skip if RHEL is not installed
+    if RHEL_VERSION is None:
+        pytest.skip(
+            f"No RHEL installation detected on {JETSON_HOST}. "
+            "These tests require a RHEL-based OS."
+        )
+
+    # Skip if JetPack RPMs are not installed
+    if JETPACK_VERSION is None:
+        pytest.skip(
+            f"JetPack RPMs not installed on {JETSON_HOST}. "
+            "Install nvidia-jetpack-for-rhel RPMs before running tests."
+        )
+
+    # Skip if no target specs defined for this JetPack version
+    target = _get_target_versions(JETPACK_VERSION)
     if target is None:
         pytest.skip(
-            f"Tests not supported yet for RHEL {RHEL_VERSION}. "
-            "Please wait for new changes or add a new target RHEL version entry "
-            "into qe-rhel-jetson/tests_suites/jetson_hardware_specs.yaml under _target_versions."
+            f"No target specs defined for JetPack {JETPACK_VERSION}. "
+            "Add an entry to _target_versions in "
+            "tests_suites/jetson_hardware_specs.yaml."
         )
 
     # Skip entire session if detected versions don't match targets
