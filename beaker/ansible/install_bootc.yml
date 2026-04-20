@@ -26,10 +26,11 @@
   become_method: sudo
   
   vars:
-    # Defaults for bootc_image, registry_url, boot_restore_hours come from inventory.yml
+    # Defaults for bootc_image, registry_url come from inventory.yml
     # (override with -e e.g. -e "bootc_image_tag=...")
     auto_reboot: true
-    setup_boot_restore: true
+    # Set to false with -e "restore_boot_order=false" to keep bootc first in boot order
+    restore_boot_order: true
   
   vars_files:
     - vars/secrets.yml  # Contains registry_user and registry_pass (encrypted with ansible-vault)
@@ -233,97 +234,6 @@
       tags: [efi]
     
     #=========================================================================
-    # Step 8: Set up boot restoration (PXE first)
-    #=========================================================================
-    - name: Calculate PXE-first boot order
-      ansible.builtin.set_fact:
-        pxe_first_order: "{{ ([pxe_entry] + (original_boot_order.split(',') | reject('in', bootc_entries) | reject('eq', pxe_entry) | list)) | join(',') }}"
-      when: setup_boot_restore
-      tags: [restore]
-    
-    - name: Create boot restoration script
-      ansible.builtin.copy:
-        dest: /etc/ostree/restore_boot.sh
-        mode: '0755'
-        content: |
-          #!/bin/bash
-          echo "Restoring original EFI boot order for Beaker..."
-          
-          # Delete bootc entries
-          {% for entry in bootc_entries %}
-          if efibootmgr | grep -q "Boot{{ entry }}"; then
-              echo "Deleting Boot{{ entry }}..."
-              efibootmgr -b {{ entry }} -B 2>/dev/null || true
-          fi
-          {% endfor %}
-          
-          # Set PXE first boot order
-          echo "Setting PXE-first boot order: {{ pxe_first_order }}"
-          efibootmgr -o {{ pxe_first_order }}
-          
-          echo "Boot order restored. Rebooting..."
-          reboot
-      when: setup_boot_restore
-      tags: [restore]
-    
-    - name: Create boot restoration systemd service
-      ansible.builtin.copy:
-        dest: /etc/systemd/system/restore-bootorder.service
-        mode: '0644'
-        content: |
-          [Unit]
-          Description=Restore EFI Boot Order for Beaker
-          
-          [Service]
-          Type=oneshot
-          ExecStart=/etc/ostree/restore_boot.sh
-          
-          [Install]
-          WantedBy=multi-user.target
-      when: setup_boot_restore
-      tags: [restore]
-    
-    - name: Create boot restoration timer
-      ansible.builtin.copy:
-        dest: /etc/systemd/system/restore-bootorder.timer
-        mode: '0644'
-        content: |
-          [Unit]
-          Description=Restore Boot Order Timer - Runs {{ boot_restore_hours }}h before reservation ends
-          
-          [Timer]
-          OnActiveSec={{ boot_restore_hours }}h
-          Persistent=true
-          
-          [Install]
-          WantedBy=timers.target
-      when: setup_boot_restore
-      tags: [restore]
-    
-    - name: Reload systemd daemon
-      ansible.builtin.systemd:
-        daemon_reload: true
-      when: setup_boot_restore
-      tags: [restore]
-    
-    - name: Enable and start boot restoration timer
-      ansible.builtin.systemd:
-        name: restore-bootorder.timer
-        enabled: true
-        state: started
-      when: setup_boot_restore
-      tags: [restore]
-    
-    - name: Display restoration info
-      ansible.builtin.debug:
-        msg: |
-          Boot restoration timer set for {{ boot_restore_hours }} hours (reservation {{ reservation_hours }}h, restore 2h before end)
-          PXE-first order: {{ pxe_first_order }}
-          Bootc entries to delete: {{ bootc_entries | join(', ') }}
-      when: setup_boot_restore
-      tags: [restore]
-    
-    #=========================================================================
     # Step 9: Reboot to new image
     #=========================================================================
     - name: Reboot to bootc image
@@ -420,19 +330,67 @@
       register: kernel_version
       changed_when: false
       tags: [verify]
-    
+
+    #=========================================================================
+    # Step 12: Restore original boot order (PXE first)
+    #   Skip with: -e "restore_boot_order=false"
+    #=========================================================================
+    - name: Calculate PXE-first boot order
+      ansible.builtin.set_fact:
+        pxe_first_order: "{{ ([pxe_entry] + (original_boot_order.split(',') | reject('in', bootc_entries) | reject('eq', pxe_entry) | list)) | join(',') }}"
+      tags: [restore]
+
+    - name: Restore original boot order (PXE first)
+      ansible.builtin.command: "efibootmgr -o {{ pxe_first_order }}"
+      when: restore_boot_order | bool
+      tags: [restore]
+
+    - name: Delete bootc EFI entries
+      ansible.builtin.command: "efibootmgr -b {{ item }} -B"
+      loop: "{{ bootc_entries }}"
+      when:
+        - restore_boot_order | bool
+        - bootc_entries | length > 0
+      failed_when: false
+      tags: [restore]
+
+    - name: Get final EFI boot configuration
+      ansible.builtin.command: efibootmgr
+      register: final_efi_info
+      changed_when: false
+      tags: [restore]
+
+    - name: Display boot order status
+      ansible.builtin.debug:
+        msg: |
+          {% if restore_boot_order | bool %}
+          Boot order RESTORED to PXE-first:
+            Order: {{ pxe_first_order }}
+            Deleted bootc entries: {{ bootc_entries | join(', ') }}
+          {% else %}
+          Boot order NOT restored (restore_boot_order=false)
+            To restore later run:
+              ssh root@{{ ansible_host }} "efibootmgr -o {{ pxe_first_order }}"
+          {% endif %}
+
+          Current EFI boot config:
+          {{ final_efi_info.stdout }}
+      tags: [restore]
+
+    #=========================================================================
+    # Summary
+    #=========================================================================
     - name: Display deployment summary
       ansible.builtin.debug:
         msg: |
           ========================================
           Bootc Installation Complete!
           ========================================
-          Host:   {{ inventory_hostname }}
+          Host:   {{ inventory_hostname }} ({{ ansible_host }})
           Kernel: {{ kernel_version.stdout }}
           Image:  {{ bootc_image }}
-          
-          Boot restore: {{ boot_restore_hours }}h (reservation {{ reservation_hours }}h)
-          PXE entry:    Boot{{ pxe_entry }}
+          Boot order restored: {{ restore_boot_order | bool }}
+          PXE entry: Boot{{ pxe_entry }}
           ========================================
       tags: [verify]
 
