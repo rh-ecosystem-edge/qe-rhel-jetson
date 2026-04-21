@@ -5,33 +5,36 @@ This directory contains pytest-based tests for Jetson RPMs using SSH connections
 ## Jetson Structure
 - HARDWARE ACCELERATORS: GPU (CUDA), DLA (AI), PVA (Vision), Video Enc/Dec
 - INTERFACES: CSI Camera, USBs, PCIe, Ethernet, CAN bus, Display
-- SOFTWARE FRAMEWORKS: GStreamer (MultiMedia), TensorRT (AI), VPI (Vision)
+- SOFTWARE FRAMEWORKS: GStreamer (MultiMedia), TensorRT (For optimal running of AI on pytorch or TensorFlow frameworks on DLA or GPU hardwares), VPI (Vision)
 
-## Reposetory Tests Structure
+## Repository Tests Structure
 
 ```
 infra_tests/                    # infrastructure for the tests (e.g SSH)
 ├── ssh_client.py               # SSHConnection class using fabric
 └── __init__.py
 
-infra_resources/                # Shared utilities/functions for all tests suites
-├──  tests_resources            # Device operations for Jetson RPM tests
-└──  hardware_info.py           # Collect hardware and system information from a Jetson device.
+tests_resources/                # Shared utilities/functions for all tests suites
+├── container_ops.py            # Container build/run utilities (general, works with any Dockerfile)
+├── device_ops.py               # Device management utilities
+├── device_logs_collector.py    # Diagnostic log collection
+└── hardware_info.py            # Collect hardware and system information from a Jetson device.
 
 tests_suites/
-├── conftest.py                 # Shared pytest fixtures (Import ssh_client.py, hardware_info collect function and set global variables)
+├── conftest.py                 # Shared fixtures + L4T image pre-pull
 ├── jetson_hardware_specs.yaml  # Jetson hardware expected values per test category
 ├── kmod/                       # Kernel module (nvidia-jetpack-kmod)
-├── cuda/                       # CUDA tests
-├── dla/                        # DLA tests
-├── pva/                        # PVA tests
-├── video_enc_dec/              # Video Encoder/Decoder tests
+├── cuda/                       # CUDA + cuDNN tests (PyTorch container + TensorFlow container + L4T container with outsource cuda-samples)
+├── dla/                        # DLA + TensorRT tests (TensorRT container + L4T container, GPU + DLA cores)
+├── pva/                        # PVA/VPI tests (L4T container, 19 VPI samples)
+├── multimedia/                 # Multimedia tests (native GStreamer + L4T MMAPI)
 ├── usbs/                       # USB tests
 ├── pcis/                       # PCI tests
 ├── can_bus/                    # CAN bus tests
 ├── csi_camera/                 # CSI camera tests
 ├── display/                    # Display tests (X11, DRM/GBM, Wayland)
 ├── tools/                      # nvidia-jetpack-tools tests (nvpmodel, nvfancontrol)
+├── sanity/                     # General Sanity verification (e.g Version/Signature checks)
 └── ethernet/                   # Ethernet tests
 ```
 
@@ -48,13 +51,13 @@ Tests can be configured via environment variables:
 - `JETSON_HOST`: Hostname or IP address of the Jetson device name
 - `JETSON_USERNAME`: SSH username
 - `JETSON_PASSWORD`: SSH password
+- `JETSON_KEY_PATH`: Path to private key, e.g. ~/.ssh/id_rsa (use when auth is key-based)
 - `JETSON_PORT`: SSH port (default: 22)
 
-Another configuration you need to make sure is your host is knowns for the system
+L4T container tests can be configured via:
 
-```bash
-ssh-keyscan -H ${JETSON_HOST} >> ~/.ssh/known_hosts
-```
+- `L4T_JETPACK_IMAGE`: L4T container image (default: `nvcr.io/nvidia/l4t-jetpack:r36.4.0`)
+- `CUDA_SAMPLES_VERSION`: cuda-samples git tag (default: `v12.9`)
 
 ## Running Tests
 
@@ -68,21 +71,22 @@ Run tests for a specific component:
 pytest tests_suites/cuda/
 pytest tests_suites/dla/
 pytest tests_suites/pva/
+pytest tests_suites/multimedia/
 ```
 
-Run only critical tests:
+Run extra tests, along with basic tests (basic tests runs in Konflux/CI):
+```bash
+pytest --run-extra tests_suites/
+```
+
+Run only extra tests (marked with @pytest.mark.extra):
+```bash
+pytest -m extra --run-extra tests_suites/ 
+```
+
+Run only critical tests (marked with @pytest.mark.critical):
 ```bash
 pytest -m critical tests_suites/
-```
-
-Run with verbose output:
-```bash
-pytest -v tests_suites/
-```
-
-Run with log level:
-```bash
-pytest -v tests_suites/ --log-cli-level=INFO
 ```
 
 ## How to Warn
@@ -93,6 +97,7 @@ for more information look at tests_suites/WARNING_BEHAVIOR.md
 
 - `@pytest.mark.critical`: Critical tests that must pass
 - `@pytest.mark.xfail`: Tests that are expected to fail on certain hardware
+- `@pytest.mark.extra`: Extra tests, skipped by default (run with `--run-extra`)
 
 ## Hardware / System Variables (for developers)
 

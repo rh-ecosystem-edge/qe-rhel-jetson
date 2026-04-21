@@ -10,7 +10,7 @@ RUN patch -d /workspace/tensorrt/samples -p 1 <<EOF
 +
  .PHONY: all clean help
  all:
-        \$(AT)\$(foreach sample, \$(samples), \$(MAKE) -C \$(sample) &&) :
+	\$(AT)\$(foreach sample, \$(samples), \$(MAKE) -C \$(sample) &&) :
 --- a/sampleOnnxMNIST/sampleOnnxMNIST.cpp
 +++ b/sampleOnnxMNIST/sampleOnnxMNIST.cpp
 @@ -405,6 +405,7 @@ void printHelpInfo()
@@ -23,5 +23,3 @@ RUN patch -d /workspace/tensorrt/samples -p 1 <<EOF
 EOF
 RUN make -C /workspace/tensorrt/samples -j 4
 WORKDIR /workspace/tensorrt
-ARG CACHEBUST=0
-RUN /workspace/tensorrt/bin/sample_onnx_mnist --useDLACore=0
