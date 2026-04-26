@@ -1,0 +1,10 @@
+ARG L4T_JETPACK_IMAGE=nvcr.io/nvidia/l4t-jetpack:r36.4.0
+FROM ${L4T_JETPACK_IMAGE}
+RUN apt-get update && apt-get install -y make g++ pkg-config
+# Patch Rules.mk for NVIDIA library path (needed for linking)
+RUN sed -i "s|LDFLAGS :=|LDFLAGS := -L/usr/lib64/nvidia|" \
+  /usr/src/jetson_multimedia_api/samples/Rules.mk
+# COMPILE ONLY — test execution happens via podman run
+RUN make -C /usr/src/jetson_multimedia_api -j $(nproc)
+COPY run-mmapi-tests.sh /opt/run-mmapi-tests.sh
+RUN chmod +x /opt/run-mmapi-tests.sh

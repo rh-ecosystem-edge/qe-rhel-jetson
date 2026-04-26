@@ -5,6 +5,7 @@ Manual guide for building a bootc disk image, flashing it to a Jetson via Jumpst
 ## Prerequisites
 
 - `podman` installed (with rootful machine configured)
+- `registry.redhat.io` registry access (for pulling official bootc-image-builder)
 - `quay.io` registry access
 - Jumpstarter client access ([check your name here](https://gitlab.cee.redhat.com/automotive/jumpstarter/ecosystems-edge/-/tree/main/configuration/clients), if missing contact Nick Cao)
 
@@ -70,7 +71,7 @@ sudo podman run --rm --privileged \
   -v /var/lib/containers/storage:/var/lib/containers/storage \
   -v ./config.toml:/config.toml:ro \
   -v ./output:/output \
-  quay.io/centos-bootc/bootc-image-builder:latest build \
+  registry.redhat.io/rhel9/bootc-image-builder:latest build \
   --output /output --type raw --target-arch arm64 \
   quay.io/redhat-user-workloads/jetpack-for-rhel-tenant/rhel97-ga-5140-61151-stage@sha256:<hash>
 ```
