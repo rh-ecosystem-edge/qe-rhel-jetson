@@ -28,7 +28,7 @@ _target_versions:
 # -----------------------------------------------------------------------------
 _templates:
   igx: &igx_common
-    dla: { supported: true }
+    dla: { supported: true, cores: 2 }
     pva: { supported: true }
     video_enc: { supported: true }
     video_dec: { supported: true }
@@ -38,12 +38,12 @@ _templates:
     video_enc: { supported: false }
     video_dec: { supported: true }
   agx: &agx_common
-    dla: { supported: true }
+    dla: { supported: true, cores: 2 }
     pva: { supported: true }
     video_enc: { supported: true }
     video_dec: { supported: true }
   orin_nx: &orin_nx_common
-    dla: { supported: true }
+    dla: { supported: true, cores: 2 }
     pva: { supported: true }
     tools: { power_modes: ["10W", "15W", "25W", "40W"] }
     video_enc: { supported: true }

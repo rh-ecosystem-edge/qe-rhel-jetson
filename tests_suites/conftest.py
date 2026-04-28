@@ -12,7 +12,6 @@ import os
 import time
 from pathlib import Path
 import sys
-import logging
 from typing import Optional, Union, Dict, Any
 import yaml
 from infra_tests.ssh_client import SSHConnection
@@ -20,17 +19,12 @@ from tests_resources.hardware_info import (
     collect as collect_hardware_info,
     compare_versions,
 )
+import logging
+logger = logging.getLogger(__name__)
 
 # Add project root to path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
 
 # Configuration - can be overridden via environment variables
 JETSON_HOST = os.getenv("JETSON_HOST")
@@ -289,6 +283,23 @@ def hardware_info_session():
     print(f"9. Bootc image version:      {BOOTC_IMAGE_VERSION}")
     print(f"10. Bootc image URL:          {BOOTC_IMAGE_URL}")
     print("=" * 80 + "\n")
+    yield
+
+@pytest.fixture(scope="session", autouse=True)
+def l4t_image_pulled(hardware_info_session):
+    """Pre-pull L4T JetPack container image once per session.
+    Podman caches the base layer — subsequent podman build FROM this image
+    only downloads the test-specific layers on top."""
+    from tests_resources.container_ops import L4T_JETPACK_IMAGE
+    with SSHConnection(
+        JETSON_HOST,
+        JETSON_USERNAME,
+        JETSON_PASSWORD or None,
+        JETSON_PORT,
+        JETSON_TIMEOUT,
+        key_filename=key_path,
+    ) as ssh:
+        ssh.sudo(f"podman pull {L4T_JETPACK_IMAGE}", timeout=300, fail_on_rc=False)
     yield
 
 @pytest.fixture(scope="session", autouse=True)

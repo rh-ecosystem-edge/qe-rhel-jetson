@@ -1,0 +1,6 @@
+ARG L4T_JETPACK_IMAGE=nvcr.io/nvidia/l4t-jetpack:r36.4.0
+FROM ${L4T_JETPACK_IMAGE}
+# TensorRT (trtexec, samples, models) is pre-installed in L4T container
+# COMPILE ONLY — build TensorRT samples for testing
+RUN apt-get update && apt-get install -y make g++
+RUN make -C /usr/src/tensorrt/samples -j $(nproc) || true
