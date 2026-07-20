@@ -93,6 +93,11 @@ Run only critical tests (marked with @pytest.mark.critical):
 pytest -m critical tests_suites/
 ```
 
+To override expected kernel version
+```bash
+pytest tests_suites/ --target-kernel-version=5.14.0-687.12.1  # 
+```
+
 ## How to Warn
 
 for more information look at tests_suites/WARNING_BEHAVIOR.md
