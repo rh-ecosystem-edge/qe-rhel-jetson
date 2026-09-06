@@ -52,6 +52,16 @@ _DMESG_ALLOWLIST = [
 ]
 
 
+def _skip_suspend_over_jumpstarter():
+    """Do not drop the DUT behind Jumpstarter's non-resilient SSH tunnel."""
+    if os.environ.get("JUMPSTARTER_IN_USE"):
+        pytest.skip(
+            "SC7 suspend is handled by the wrapper-controlled fresh-tunnel phase — "
+            "an individual TcpPortforwardAdapter cannot reconnect after the DUT "
+            "goes down"
+        )
+
+
 def _key_path():
     kp = os.getenv("JETSON_KEY_PATH")
     return os.path.expanduser(kp) if kp else None
@@ -351,6 +361,7 @@ class TestSC7Suspend:
     @pytest.fixture(autouse=True)
     def fresh_ssh(self):
         """Each SC7 suspend test gets its own SSH session for reconnect control."""
+        _skip_suspend_over_jumpstarter()
         conn = SSHConnection(
             JETSON_HOST, JETSON_USERNAME,
             JETSON_PASSWORD or None, JETSON_PORT, JETSON_TIMEOUT,
@@ -442,6 +453,7 @@ class TestSC7Recovery:
     @pytest.fixture(autouse=True)
     def post_resume_ssh(self):
         """Perform one suspend/resume cycle; yield a connected SSH to the resumed system."""
+        _skip_suspend_over_jumpstarter()
         pre = SSHConnection(
             JETSON_HOST, JETSON_USERNAME,
             JETSON_PASSWORD or None, JETSON_PORT, JETSON_TIMEOUT,

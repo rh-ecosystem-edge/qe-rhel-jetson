@@ -131,6 +131,9 @@ pip install -r requirements.txt
 jmp get leases --client $USER     # copy your lease name
 jmp shell --lease <LEASE_NAME> -- python jumpstarter/wrapper.py pytest tests_suites/
 ```
+
+Running `python jumpstarter/wrapper.py` without a trailing command defaults to
+`pytest tests_suites/`.
 *If no PXE menu appears during the running* , stop and run the following command
 
 ```bash
@@ -285,6 +288,18 @@ vncviewer localhost:5900
 4. Opens SSH tunnel via Jumpstarter port forwarding
 5. Runs `bootc-generic-growpart` to expand the root partition
 6. Launches `pytest` with `JETSON_HOST`/`JETSON_PORT` set to the forwarded address
+7. For a full-suite or SC7 run, closes the original tunnel, performs one SC7
+   suspend, waits for RTC resume, opens a fresh tunnel, and validates the resume
+
+Set `RUN_SC7_WRAPPER=0` to disable the wrapper-controlled SC7 phase, or set it
+to `1` to enable the phase for a custom pytest selection. The SC7 pytest cases
+show as skipped under Jumpstarter because the equivalent cycle runs after pytest.
+
+Full-suite runs use two pytest workers by default. Shared-state suites are kept
+on one serial worker while read-only suites can run concurrently. Override with
+`JETSON_PYTEST_WORKERS=<N>`, or set it to `1` to disable parallel execution.
+The wrapper performs a final best-effort cleanup of labelled test containers and
+images, known test processes, and project-owned temporary files.
 
 ### SSH Auth Priority
 

@@ -1,5 +1,6 @@
 # Tests dependencies
 pytest>=7.0.0
+pytest-xdist>=3.6.0
 paramiko>=3.0.0
 fabric>=3.2.2
 PyYAML>=6.0

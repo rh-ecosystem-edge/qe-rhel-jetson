@@ -7,6 +7,7 @@ import os
 import re
 import yaml
 import subprocess
+import importlib.util
 from pathlib import Path
 from logging import getLogger
 
@@ -140,6 +141,150 @@ def _prepull_container_images(addr, username, password, key_filename):
     print(f"\n[wrapper] Pre-pull complete. Pulled: {len(pulled)}, Cached: {len(cached)}, Failed: {len(failed)}", flush=True)
     logger.info("[wrapper] Pre-pull complete. Pulled: %d, Cached: %d, Failed: %d",
                 len(pulled), len(cached), len(failed))
+
+
+def _pytest_requests_sc7(argv):
+    """Return whether this wrapper invocation selects the full suite or SC7."""
+    override = os.environ.get("RUN_SC7_WRAPPER", "").strip().lower()
+    if override in ("0", "false", "no"):
+        return False
+    if override in ("1", "true", "yes"):
+        return True
+    if not argv or Path(argv[0]).name not in ("pytest", "py.test"):
+        return False
+
+    paths = [arg.rstrip("/") for arg in argv[1:] if not arg.startswith("-")]
+    if not paths:
+        return True
+    return any(path == "tests_suites" or "tests_suites/sc7" in path for path in paths)
+
+
+def _parallelize_full_suite(argv):
+    """Add conservative xdist settings to an uncustomized full-suite run."""
+    if not argv:
+        logger.info(
+            "[wrapper] No test command supplied; defaulting to: pytest tests_suites/"
+        )
+        argv = ["pytest", "tests_suites/"]
+    if not argv[0].strip():
+        raise ValueError("Test command cannot be empty")
+    if Path(argv[0]).name not in ("pytest", "py.test"):
+        return argv
+    if any(arg == "-n" or arg.startswith("--numprocesses") for arg in argv):
+        return argv
+    paths = [arg.rstrip("/") for arg in argv[1:] if not arg.startswith("-")]
+    if paths and not any(path == "tests_suites" for path in paths):
+        return argv
+    workers = os.environ.get("JETSON_PYTEST_WORKERS", "2").strip()
+    if workers in ("0", "1", "false", "no"):
+        return argv
+    if importlib.util.find_spec("xdist") is None:
+        logger.warning(
+            "[wrapper] pytest-xdist is not installed; running serially. "
+            "Install the updated requirements.txt to enable parallel tests."
+        )
+        return argv
+    logger.info("[wrapper] Enabling safe pytest parallelism with %s workers", workers)
+    return [argv[0], "-n", workers, "--dist", "loadgroup", *argv[1:]]
+
+
+def _cleanup_test_artifacts(addr, SSHConnection):
+    """Remove only artifacts explicitly labelled or named by this test project."""
+    logger.info("[wrapper] Cleaning test containers, images, processes, and temp dirs")
+    try:
+        with SSHConnection(
+            addr[0], USERNAME, PASSWORD, addr[1], 20, key_filename=key_filename
+        ) as ssh:
+            commands = (
+                "podman ps -aq --filter label=io.qe-rhel-jetson.test=true "
+                "| xargs -r podman rm -f",
+                "podman images -q --filter label=io.qe-rhel-jetson.test=true "
+                "| sort -u | xargs -r podman rmi -f",
+                "pkill -f '^[c]andump ' || true",
+                "find /tmp -maxdepth 1 -type d -name 'test-*-??????' "
+                "-exec rm -rf -- {} +",
+                "rm -f -- /tmp/candump_loopback.log /tmp/spi_loopback.py "
+                "/tmp/vic_test.jpg /tmp/vic_multi_*.jpeg /tmp/vic_transcode.mp4",
+            )
+            for command in commands:
+                ssh.sudo(command, fail_on_rc=False, print_output=False)
+    except Exception as exc:
+        logger.warning("[wrapper] Best-effort cleanup could not complete: %s", exc)
+
+
+def _run_sc7_wrapper_phase(ssh_client, SSHConnection):
+    """Run one SC7 cycle across two disposable Jumpstarter tunnels."""
+    from tests_suites.sc7 import test_sc7 as sc7
+
+    logger.info("[wrapper][SC7] Opening pre-suspend tunnel")
+    with TcpPortforwardAdapter(client=ssh_client) as addr:
+        pre = SSHConnection(
+            addr[0], USERNAME, PASSWORD, addr[1], key_filename=key_filename
+        )
+        try:
+            sc7._set_wakealarm(pre, sc7.WAKEALARM_DELTA)
+            success_before = sc7._read_suspend_success(pre)
+            uptime_before = float(pre.run("cat /proc/uptime").stdout.split()[0])
+            sc7._trigger_suspend(pre)
+        finally:
+            sc7._close_quietly(pre)
+
+    wait_seconds = sc7.WAKEALARM_DELTA + sc7.POST_RESUME_SETTLE
+    logger.info(
+        "[wrapper][SC7] Pre-suspend tunnel closed; waiting %ss for RTC resume",
+        wait_seconds,
+    )
+    time.sleep(wait_seconds)
+
+    deadline = time.monotonic() + sc7.RESUME_TIMEOUT
+    last_error = None
+    while time.monotonic() < deadline:
+        try:
+            logger.info("[wrapper][SC7] Opening fresh post-resume tunnel")
+            with TcpPortforwardAdapter(client=ssh_client) as addr:
+                with SSHConnection(
+                    addr[0], USERNAME, PASSWORD, addr[1], 15,
+                    key_filename=key_filename,
+                ) as resumed:
+                    success_after = sc7._assert_sc7_cycle(resumed, success_before)
+                    uptime_after = float(
+                        resumed.run("cat /proc/uptime").stdout.split()[0]
+                    )
+                    if uptime_after <= uptime_before:
+                        raise RuntimeError(
+                            "DUT rebooted instead of resuming from SC7 "
+                            f"(uptime {uptime_before:.1f}s -> {uptime_after:.1f}s)"
+                        )
+
+                    errors = sc7._dmesg_errors(sc7._dmesg_since_last_suspend(resumed))
+                    if errors:
+                        raise RuntimeError(
+                            "Kernel errors after SC7 resume:\n" + "\n".join(errors)
+                        )
+                    resumed.run("ip link show up")
+                    resumed.run("nvidia-smi")
+                    failed = resumed.run(
+                        "systemctl list-units --state=failed --no-legend --no-pager",
+                        fail_on_rc=False,
+                    ).stdout.strip()
+                    if failed:
+                        raise RuntimeError(
+                            "Failed systemd units after SC7 resume:\n" + failed
+                        )
+
+                    logger.info(
+                        "[wrapper][SC7] PASS: suspend counter %s -> %s, uptime %.1fs -> %.1fs",
+                        success_before, success_after, uptime_before, uptime_after,
+                    )
+                    return
+        except Exception as exc:
+            last_error = exc
+            logger.warning("[wrapper][SC7] Fresh tunnel not ready: %s", exc)
+            time.sleep(5)
+
+    raise RuntimeError(
+        f"[wrapper][SC7] DUT did not validate after resume: {last_error}"
+    )
 
 
 def _detect_wrong_os(boot_output):
@@ -570,6 +715,8 @@ with env() as client:
         time.sleep(10)
 
         ssh_client = client.ssh.tcp if hasattr(client.ssh, 'tcp') else client.ssh
+        pytest_command = _parallelize_full_suite(sys.argv[1:])
+        run_sc7_phase = _pytest_requests_sc7(pytest_command)
         with TcpPortforwardAdapter(client=ssh_client) as addr:
             os.environ["JETSON_HOST"] = addr[0]
             os.environ["JETSON_PORT"] = str(addr[1])
@@ -601,4 +748,15 @@ with env() as client:
                   f"JETSON_PORT={os.environ['JETSON_PORT']} "
                   f"JETSON_USERNAME={os.environ.get('JETSON_USERNAME')} "
                   f"JETSON_KEY_PATH={os.environ.get('JETSON_KEY_PATH', '(not set)')}")
-            subprocess.run(sys.argv[1:])
+            wrapper_exit_code = 1  # Default to failure
+            try:
+                result = subprocess.run(pytest_command)
+                wrapper_exit_code = result.returncode
+            finally:
+                _cleanup_test_artifacts(addr, SSHConnection)
+
+        if wrapper_exit_code == 0 and run_sc7_phase:
+            _run_sc7_wrapper_phase(ssh_client, SSHConnection)
+
+if wrapper_exit_code != 0:
+    raise SystemExit(wrapper_exit_code)

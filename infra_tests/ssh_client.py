@@ -190,7 +190,12 @@ class SSHConnection(Connection):
             string_logger_formatted = f"\t\t[Fabric] Running command: {command}"
             logger.info(string_logger_formatted)
 
-        result = super().run(command, timeout=timeout, warn=True, hide=True)
+        # All test commands are non-interactive. Disabling stdin forwarding
+        # avoids Invoke's background FIONREAD thread, which can raise
+        # ``SystemError: buffer overflow`` on Python 3.14 inside `jmp shell`.
+        result = super().run(
+            command, timeout=timeout, warn=True, hide=True, in_stream=False
+        )
         # Create a result-like object similar to Fabric's result
         result = type(
             "Result",
@@ -239,7 +244,12 @@ class SSHConnection(Connection):
             string_logger_formatted = f"\t\t[Fabric] Running command: {command}"
             logger.info(string_logger_formatted)
 
-        result = super().sudo(command, timeout=timeout, warn=True, hide=True)
+        # Fabric's sudo password watcher is independent of stdin forwarding.
+        # Keeping stdin disabled also prevents the Python 3.14/Invoke FIONREAD
+        # crash seen during long-running Podman pulls.
+        result = super().sudo(
+            command, timeout=timeout, warn=True, hide=True, in_stream=False
+        )
         # Create a result-like object similar to Fabric's result
         result = type(
             "Result",

@@ -7,7 +7,6 @@ Test execution happens via run_container() so each test gets individual pass/fai
 """
 import os
 import logging
-from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -141,20 +140,30 @@ def build_container_image(ssh, dockerfile_path, image_tag, context_files=None,
         return image_tag
 
     tmp = ssh.run(f"mktemp -d /tmp/test-{suite_name}-XXXXXX").stdout.strip()
-    ssh.put(dockerfile_path, f"{tmp}/Dockerfile")
-    if context_files:
-        for f in context_files:
-            ssh.put(f, f"{tmp}/{f.name}")
+    try:
+        ssh.put(dockerfile_path, f"{tmp}/Dockerfile")
+        if context_files:
+            for f in context_files:
+                ssh.put(f, f"{tmp}/{f.name}")
 
-    all_args = dict(build_args or {})
-    if "L4T_JETPACK_IMAGE" not in all_args:
-        all_args["L4T_JETPACK_IMAGE"] = get_l4t_jetpack_image()
-    if "CACHEBUST" not in all_args:
-        all_args["CACHEBUST"] = str(datetime.now().timestamp())
-    args_str = " ".join(f"--build-arg {k}='{v}'" for k, v in all_args.items())
+        all_args = dict(build_args or {})
+        if "L4T_JETPACK_IMAGE" not in all_args:
+            all_args["L4T_JETPACK_IMAGE"] = get_l4t_jetpack_image()
+        cachebust = os.getenv("CONTAINER_BUILD_CACHEBUST")
+        if cachebust and "CACHEBUST" not in all_args:
+            all_args["CACHEBUST"] = cachebust
+        args_str = " ".join(f"--build-arg {k}='{v}'" for k, v in all_args.items())
 
-    cmd = f"podman build -t {image_tag} {PODMAN_GPU_FLAGS} {args_str} {tmp}"
-    ssh.sudo(cmd, timeout=timeout)
+        cmd = (
+            f"podman build --label io.qe-rhel-jetson.test=true -t {image_tag} "
+            f"{PODMAN_GPU_FLAGS} {args_str} {tmp}"
+        )
+        ssh.sudo(cmd, timeout=timeout)
+    finally:
+        try:
+            ssh.sudo(f"rm -rf -- {tmp}", fail_on_rc=False, print_output=False)
+        except Exception as exc:
+            logger.warning("Could not remove remote build directory %s: %s", tmp, exc)
     return image_tag
 
 
@@ -173,7 +182,10 @@ def run_container(ssh, image_tag, command="", timeout=DEFAULT_RUN_TIMEOUT, extra
     Returns:
         Result object with stdout, stderr, exit_status
     """
-    cmd = f"podman run --rm {PODMAN_GPU_FLAGS} {extra_flags} {image_tag} {command}"
+    cmd = (
+        "podman run --rm --label io.qe-rhel-jetson.test=true "
+        f"{PODMAN_GPU_FLAGS} {extra_flags} {image_tag} {command}"
+    )
     return ssh.sudo(cmd, timeout=timeout, fail_on_rc=False)
 
 

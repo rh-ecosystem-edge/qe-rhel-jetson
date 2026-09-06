@@ -42,8 +42,16 @@ class TestTools:
         result = ssh.run("nvpmodel -q", fail_on_rc=False)
         assert result.exit_status == 0, f"nvpmodel -q failed: {result.stderr}"
         assert result.stdout.strip(), "nvpmodel produced no output"
-        # Check if the power model is a number in the second line of the output
-        assert result.stdout.splitlines()[1].isdigit(), "nvpmodel -q produced no power model"
+        # Output layout varies by nvpmodel release. Accept either a numeric mode
+        # ID or a named mode such as MODE_30W/MAXN anywhere in the response.
+        mode_match = re.search(
+            r"(?im)^\s*(?:NV Power Mode:\s*)?(?:MODE_)?(?:MAXN|\d+(?:W)?)\s*$",
+            result.stdout,
+        )
+        assert mode_match, (
+            "nvpmodel -q produced no recognizable power model:\n"
+            + result.stdout
+        )
         # Check if the power model is in the allowed list or range
         # MAXN is always a valid power mode (maximum performance, no wattage cap)
         if "MAXN" in result.stdout:

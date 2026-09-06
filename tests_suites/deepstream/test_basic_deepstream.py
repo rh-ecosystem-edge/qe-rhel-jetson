@@ -119,9 +119,17 @@ class TestDeepStream:
                 probe_out[-600:],
             )
 
-        # Detect available H264 decoder — nvv4l2decoder is L4T-only, not in triton-multiarch
-        dec_check = run_container(ssh, deepstream_image, "gst-inspect-1.0 nvv4l2decoder")
-        decoder = "nvv4l2decoder" if dec_check.exit_status == 0 else "avdec_h264"
+        # Detect available H264 decoder
+        # Priority: nvv4l2decoder (L4T native) > nvdec_h264 (NVDEC HW) > avdec_h264 (FFmpeg SW)
+        decoders_to_try = ["nvv4l2decoder", "nvdec_h264", "avdec_h264", "nvh264dec"]
+        decoder = None
+        for dec in decoders_to_try:
+            dec_check = run_container(ssh, deepstream_image, f"gst-inspect-1.0 {dec}")
+            if dec_check.exit_status == 0:
+                decoder = dec
+                break
+        if not decoder:
+            pytest.skip("No H264 decoder found in DeepStream container")
         logger.info("Using H264 decoder: %s", decoder)
 
         sample_stream = f"{DS_STREAMS}/sample_720p.h264"
@@ -131,15 +139,17 @@ class TestDeepStream:
             ssh, deepstream_image,
             f"bash -c 'cd {DS_BASE} && "
             f"gst-launch-1.0 "
-            f"filesrc location={sample_stream} ! h264parse ! {decoder} ! "
             f"nvstreammux name=mux batch-size=1 width=1280 height=720 "
             f"batched-push-timeout=40000 ! "
             f"nvinfer config-file-path={infer_config} batch-size=1 ! "
-            f"fakesink'",
+            f"fakesink "
+            f"filesrc location={sample_stream} ! h264parse ! {decoder} ! "
+            f"mux.sink_0'",
             timeout=900,
         )
         assert result.exit_status == 0, (
-            f"DeepStream inference pipeline failed: {result.stderr}"
+            "DeepStream inference pipeline failed:\n"
+            + (result.stdout + result.stderr)[-4000:]
         )
         logger.info("DeepStream inference pipeline output tail:\n%s",
                     (result.stdout + result.stderr)[-800:])

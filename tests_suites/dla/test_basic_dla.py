@@ -36,9 +36,11 @@ class TestDLA:
         spec = _conftest.get_hardware_spec(_conftest.HARDWARE_MODEL_NAME)
         tag = "dla-tensorrt-qe-tests"
         build_container_image(ssh, FILE / "Dockerfile.tensorrt", tag, suite_name="dla-tensorrt")
-        result = run_container(ssh, tag,
-            "/workspace/tensorrt/bin/sample_onnx_mnist --useDLACore=0")
-        cleanup_container_image(ssh, tag)
+        try:
+            result = run_container(ssh, tag,
+                "/workspace/tensorrt/bin/sample_onnx_mnist --useDLACore=0")
+        finally:
+            cleanup_container_image(ssh, tag)
         if not spec.get("dla").get("supported"):
           assert result.exit_status != 0, "DLA test passed, but not supported (see jetson_hardware_specs.yaml)"
         else:

@@ -22,6 +22,7 @@ from tests_resources.hardware_info import (
     compare_versions,
 )
 import logging
+import shlex
 logger = logging.getLogger(__name__)
 
 # Add project root to path
@@ -121,15 +122,22 @@ def _install_beaker_repo(ssh, rhel_version: Optional[str]):
     )
     cmd_epel = f"dnf install https://dl.fedoraproject.org/pub/epel/epel-release-latest-{main_rhel_version}.noarch.rpm -y"
 
-    result = ssh.sudo("dnf repolist")
+    def locked_dnf(command):
+        command = ssh._mutate_command(command)
+        return ssh.sudo(
+            "flock -w 300 /run/lock/qe-rhel-jetson-dnf.lock sh -c "
+            + shlex.quote(command)
+        )
+
+    result = locked_dnf("dnf repolist")
     repos = result.stdout.lower()
 
     if "appstream" not in repos or "baseos" not in repos:
         logger.info("[Setup] Nightly repos missing, installing for RHEL %s", rhel_version)
         for attempt in range(1, 4):
             try:
-                ssh.sudo(cmd_baseos)
-                ssh.sudo(cmd_appstream)
+                locked_dnf(cmd_baseos)
+                locked_dnf(cmd_appstream)
                 break
             except Exception as e:
                 if attempt < 3:
@@ -141,7 +149,7 @@ def _install_beaker_repo(ssh, rhel_version: Optional[str]):
 
     if "epel" not in repos:
         logger.info("[Setup] EPEL missing, installing for RHEL %s", rhel_version)
-        ssh.sudo(cmd_epel)
+        locked_dnf(cmd_epel)
 
 def _get_target_versions(jetpack_userspace_version: Optional[str]) -> Optional[Dict[str, str]]:
     """Return target version dict for the given Jetpack version, or None."""
@@ -413,13 +421,16 @@ def beaker_repo_session(hardware_info_session):
     yield
 
 @pytest.fixture(scope="session", autouse=True)
-def fetch_hardware_logs_session(hardware_info_session):
+def fetch_hardware_logs_session(hardware_info_session, request):
     """
     Fetch hardware logs and outputs from the Jetson at session teardown.
     Depends on hardware_info_session to ensure BOOTC_IMAGE_URL is available.
     Logs are saved to qe-rhel-jetson/device_logs/ as a tar.gz archive.
     """
     yield
+    worker_id = getattr(request.config, "workerinput", {}).get("workerid", "master")
+    if worker_id not in ("master", "gw0"):
+        return
     logger.info("[Teardown] Fetching hardware logs from the Jetson...")
     with SSHConnection(
         JETSON_HOST,
@@ -433,13 +444,17 @@ def fetch_hardware_logs_session(hardware_info_session):
     logger.info("[Teardown] Hardware logs fetched successfully")
 
 @pytest.fixture(scope="class", autouse=True)
-def drop_memory_cache(ssh):
+def drop_memory_cache(ssh, request):
     """
     Clear memory (RAM) cache of the Jetson before and after each test class.
     to ensure the shared memory is being freed
     (with these sharing memory between the system and GPU, going out of memory due to system cache is known to happen)
     """
     yield
+    accelerator_suites = {"cuda", "dla", "pva", "multimedia", "vic", "deepstream"}
+    path_parts = set(Path(str(request.node.fspath)).parts)
+    if not accelerator_suites.intersection(path_parts):
+        return
     try:
         ssh.sudo("sync; sync; sync")
         ssh.sudo("echo 3 | sudo tee /proc/sys/vm/drop_caches")
@@ -538,9 +553,10 @@ class SessionFileLogger:
     def pytest_configure(self, config):
         host = os.getenv("JETSON_HOST", "unknown-host").split(".")[0]
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        worker_id = getattr(config, "workerinput", {}).get("workerid", "master")
         results_dir = Path(__file__).parent.parent / "test-results"
         results_dir.mkdir(exist_ok=True)
-        self._report_path = results_dir / f"report_{host}_{timestamp}.txt"
+        self._report_path = results_dir / f"report_{host}_{timestamp}_{worker_id}.txt"
         self._log_file = open(self._report_path, "w", buffering=1)
         self._orig_stdout = sys.stdout
         self._orig_stderr = sys.stderr
@@ -556,6 +572,9 @@ class SessionFileLogger:
             print(f"\n📄 Session report saved to: {self._report_path}")
 
 def pytest_configure(config):
+    config.addinivalue_line(
+        "markers", "xdist_group(name): keep shared-hardware tests on one worker"
+    )
     config.pluginmanager.register(SessionFileLogger(), "session_file_logger")
 
 # ---------------------------------------------------------------------------
@@ -589,6 +608,14 @@ def pytest_addoption(parser):
     )
 
 def pytest_collection_modifyitems(config, items):
+    serial_suites = {
+        "bootc", "can_bus", "cuda", "deepstream", "display", "dla", "isp",
+        "multimedia", "pcis", "pva", "rtc", "sc7", "spi_i2c", "usbs", "vic",
+    }
+    for item in items:
+        if serial_suites.intersection(Path(str(item.fspath)).parts):
+            item.add_marker(pytest.mark.xdist_group(name="jetson_serial"))
+
     if config.getoption("--run-extra"):
         return  # --run-extra given: run everything
     skip_extra = pytest.mark.skip(reason="Extra test — use --run-extra to run")
