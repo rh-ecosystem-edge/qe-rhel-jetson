@@ -4,9 +4,9 @@ on:
   # Run a bit after each Prow cron to give jobs time to finish
   # rhel-9.8: e2e-full Monday 08:00 UTC, e2e-bootc Saturday 12:00 UTC
   # rhel-10.2: add entries here when hardware is available
-  schedule:
-    - cron: '30 10 * * 1'   # rhel-9.8 e2e-full  - Monday   10:30 UTC  (job runs 08:00)
-    - cron: '30 14 * * 6'   # rhel-9.8 e2e-bootc - Saturday 14:30 UTC  (job runs 12:00)
+  #schedule:
+  #  - cron: '30 10 * * 1'   # rhel-9.8 e2e-full  - Monday   10:30 UTC  (job runs 08:00)
+  #  - cron: '30 14 * * 6'   # rhel-9.8 e2e-bootc - Saturday 14:30 UTC  (job runs 12:00)
   workflow_dispatch:
     inputs:
       job_name:
