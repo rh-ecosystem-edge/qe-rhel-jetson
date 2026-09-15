@@ -422,7 +422,7 @@ def _wait_for_login(p):
     for attempt in range(3):
         try:
             idx = p.expect_exact(
-                ["login:", "grub>", "Give root password", "Shell>", "Use the ^ and v keys"],
+                ["login:", "grub>", "Give root password", "Shell>", "Use the ^ and v keys", "Enter to continue boot."],
                 timeout=600,
             )
             if idx == 0:
@@ -472,6 +472,11 @@ def _wait_for_login(p):
                         logger.info("[wrapper] Lost Shell> prompt, will retry...")
             elif idx == 4:
                 logger.info("[wrapper] GRUB boot menu detected, sending ENTER to boot default entry...")
+                p.sendline("")
+                time.sleep(5)
+                continue
+            elif idx == 5:
+                logger.info("[wrapper] UEFI boot screen detected, sending ENTER to continue boot...")
                 p.sendline("")
                 time.sleep(5)
                 continue
