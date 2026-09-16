@@ -20,7 +20,7 @@ L4T_JETPACK_IMAGE = os.getenv("L4T_JETPACK_IMAGE", "nvcr.io/nvidia/l4t-jetpack:r
 # NGC l4t-jetpack version tags (image tags only — ignore .sig / SBOM / VEX).
 # There is no r36.5.x (JetPack 6.2.x) and no r39.x (JetPack 7 / RHEL 10.2).
 # Newest host driver + older container userspace is NVIDIA's supported combo.
-# Keep newest-first; add a tag here when NVIDIA publishes it.
+# Keep newest-first; add a tag here when NVIDIA publishes it. (https://catalog.ngc.nvidia.com/orgs/nvidia/-/containers/l4t-jetpack/)
 PUBLISHED_L4T_JETPACK_TAGS = (
     "r36.4.0",  # JetPack 6.x latest — use this for RHEL 9.8 / host L4T 36.5.x
     "r36.3.0",

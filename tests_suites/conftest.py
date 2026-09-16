@@ -143,16 +143,80 @@ def _install_beaker_repo(ssh, rhel_version: Optional[str]):
         logger.info("[Setup] EPEL missing, installing for RHEL %s", rhel_version)
         ssh.sudo(cmd_epel)
 
+def _ensure_nvidia_container_toolkit(ssh):
+    """
+    Ensure NVIDIA container toolkit is installed and CDI is generated.
+    Only runs on RC/Production builds (non-stage/dev/sidecar).
+    """
+    repo_path = "/etc/yum.repos.d/nvidia-container-toolkit.repo"
+    repo_content = """[nvidia-container-toolkit]
+name=nvidia-container-toolkit
+baseurl=https://nvidia.github.io/libnvidia-container/stable/rpm/$basearch
+repo_gpgcheck=1
+gpgcheck=0
+enabled=1
+gpgkey=https://nvidia.github.io/libnvidia-container/gpgkey
+sslverify=1
+sslcacert=/etc/pki/tls/certs/ca-bundle.crt
+
+[nvidia-container-toolkit-experimental]
+name=nvidia-container-toolkit-experimental
+baseurl=https://nvidia.github.io/libnvidia-container/experimental/rpm/$basearch
+repo_gpgcheck=1
+gpgcheck=0
+enabled=0
+gpgkey=https://nvidia.github.io/libnvidia-container/gpgkey
+sslverify=1
+sslcacert=/etc/pki/tls/certs/ca-bundle.crt
+"""
+    
+    logger.info("[Setup] Checking NVIDIA Container Toolkit repo...")
+    # Check if repo file exists
+    result = ssh.run(f"ls {repo_path}", fail_on_rc=False)
+    if result.exit_status != 0:
+        logger.info("[Setup] NVIDIA toolkit repo missing, creating it...")
+        # Write content to a temporary file then move it to /etc/yum.repos.d/
+        # Use base64 to avoid shell escaping issues with $basearch
+        import base64
+        b64_content = base64.b64encode(repo_content.encode()).decode()
+        ssh.run(f"echo '{b64_content}' | base64 -d > /tmp/nvidia-toolkit.repo")
+        ssh.sudo(f"mv /tmp/nvidia-toolkit.repo {repo_path}")
+        ssh.sudo("dnf clean all")
+    
+    logger.info("[Setup] Ensuring nvidia-container-toolkit-base is installed...")
+    ssh.sudo("dnf install -y nvidia-container-toolkit-base")
+    
+    logger.info("[Setup] Checking NVIDIA CDI status...")
+    # Generate CDI if it doesn't exist or isn't listed
+    cdi_check = ssh.run("nvidia-ctk cdi list", fail_on_rc=False)
+    if cdi_check.exit_status != 0 or "nvidia.com/gpu" not in cdi_check.stdout:
+        logger.info("[Setup] NVIDIA CDI not active, generating...")
+        ssh.sudo("mkdir -p /etc/cdi")
+        ssh.sudo("nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml")
+
 def _get_target_versions(jetpack_userspace_version: Optional[str]) -> Optional[Dict[str, str]]:
     """Return target version dict for the given Jetpack version, or None."""
     specs = _load_hardware_specs()
     targets = specs.get("_target_versions", {})
-    return targets.get(str(jetpack_userspace_version)) if jetpack_userspace_version else None
+    if not jetpack_userspace_version:
+        return None
 
-def _verify_target_versions(kernel_version_override: Optional[str] = None) -> list[str]:
+    # 1. Direct match by key (marketing version, e.g. '6.2.2')
+    if str(jetpack_userspace_version) in targets:
+        return targets[str(jetpack_userspace_version)]
+
+    # 2. Fallback: match against l4t_version in any entry
+    for entry in targets.values():
+        l4t = str(entry.get("l4t_version"))
+        if str(jetpack_userspace_version) == l4t:
+            return entry
+
+    return None
+
+def _verify_target_versions(kernel_version_override: Optional[str] = None, target: Optional[Dict[str, Any]] = None) -> list[str]:
     """Verify detected versions match targets. Returns list of mismatch messages."""
-    target = _get_target_versions(JETPACK_VERSION)
-    if target is None:
+    target = target or _get_target_versions(JETPACK_VERSION or L4T_VERSION)
+    if not target:
         return []
     if kernel_version_override:
         target = dict(target)
@@ -248,7 +312,7 @@ def hardware_info_session(request):
     BOOTC_VERSION = info.get("bootc_version")
     BOOTC_IMAGE_VERSION = info.get("bootc_image_version")
     BOOTC_IMAGE_URL = info.get("bootc_image_url")
-    IS_STAGE_BUILD = "stage" in (BOOTC_IMAGE_URL or "").lower()
+    IS_STAGE_BUILD = any(x in (BOOTC_IMAGE_URL or "").lower() for x in ["stage", "sidecar", "dev"])
     SECURE_BOOT_STATE = info.get("secure_boot_state")
     # Skip entire session if hardware model is not in Testing Matrix (jetson_hardware_specs.yaml)
     if get_hardware_spec(HARDWARE_MODEL_NAME) is None:
@@ -273,6 +337,20 @@ def hardware_info_session(request):
 
     # Skip if no target specs defined for this JetPack version
     target = _get_target_versions(JETPACK_VERSION)
+
+    # Special handling for sidecar/L4T RPM versions
+    specs = _load_hardware_specs()
+    targets = specs.get("_target_versions", {})
+    l4t_list = [str(v.get("l4t_version")) for v in targets.values() if v.get("l4t_version")]
+
+    if target and JETPACK_VERSION and str(JETPACK_VERSION) in l4t_list:
+        logger.warning(
+            f"Detected version {JETPACK_VERSION!r} as a known L4T version. "
+            f"The RPMs should be named as nvidia-jetpack-for-rhel-<jetpack version>...rpm, not nvidia-jetpack-<l4t version>...rpm"
+        )
+        L4T_VERSION = JETPACK_VERSION
+        JETPACK_VERSION = None
+
     if target is None:
         pytest.skip(
             f"No target specs defined for JetPack {JETPACK_VERSION}. "
@@ -281,7 +359,10 @@ def hardware_info_session(request):
         )
 
     # Skip entire session if detected versions don't match targets
-    mismatches = _verify_target_versions(kernel_version_override=request.config.getoption("--target-kernel-version"))
+    mismatches = _verify_target_versions(
+        kernel_version_override=request.config.getoption("--target-kernel-version"),
+        target=target
+    )
     if mismatches:
         pytest.skip("Version mismatch — " + "; ".join(mismatches))
 
@@ -320,7 +401,8 @@ def refresh_hardware_info_globals(ssh):
     global FIRMWARE_VERSION, FIRMWARE_TYPE
     global HARDWARE_MODEL_NAME, KERNEL_VERSION, CPU_ARCH
     global BOOTC_AVAILABLE, BOOTC_VERSION, BOOTC_IMAGE_URL, BOOTC_IMAGE_VERSION
-    global IS_STAGE_BUILD, SECURE_BOOT_STATE
+    global IS_STAGE_BUILD, IS_GUI_BUILD
+    global SECURE_BOOT_STATE
     RHEL_VERSION = info.get("rhel_version")
     L4T_VERSION = info.get("l4t_version")
     JETPACK_VERSION = info.get("jetpack_version")
@@ -334,26 +416,29 @@ def refresh_hardware_info_globals(ssh):
     BOOTC_VERSION = info.get("bootc_version")
     BOOTC_IMAGE_VERSION = info.get("bootc_image_version")
     BOOTC_IMAGE_URL = info.get("bootc_image_url")
-    IS_STAGE_BUILD = "stage" in (BOOTC_IMAGE_URL or "").lower()
+    IS_STAGE_BUILD = any(x in (BOOTC_IMAGE_URL or "").lower() for x in ["stage", "sidecar", "dev"])
+    IS_GUI_BUILD = "gui" in (BOOTC_IMAGE_URL or "").lower()
     SECURE_BOOT_STATE = info.get("secure_boot_state")
+
+    # Re-apply sidecar/L4T fallback logic
+    specs = _load_hardware_specs()
+    targets = specs.get("_target_versions", {})
+    l4t_list = [str(v.get("l4t_version")) for v in targets.values() if v.get("l4t_version")]
+    if JETPACK_VERSION and str(JETPACK_VERSION) in l4t_list:
+        L4T_VERSION = JETPACK_VERSION
+        JETPACK_VERSION = None
+
     logger.info(
         "[bootc switch] Hardware info refreshed — image: %s  kernel: %s",
         BOOTC_IMAGE_URL, KERNEL_VERSION,
     )
 
-
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="session", autouse=True)
 def l4t_image_pulled(hardware_info_session):
     """Pre-pull L4T JetPack container image once per session.
-
-    Not autouse: SC7/RTC/and other non-container suites must not depend on
-    nvcr.io. Suites that build FROM l4t-jetpack request this fixture.
-
-    Host L4T is mapped to a published NGC tag (r36.5.x -> r36.4.0). If that
-    pull still fails, try remaining published tags on the same L4T major.
-    """
-    from tests_resources import container_ops as cops
-
+    Podman caches the base layer — subsequent podman build FROM this image
+    only downloads the test-specific layers on top."""
+    from tests_resources.container_ops import L4T_JETPACK_IMAGE
     with SSHConnection(
         JETSON_HOST,
         JETSON_USERNAME,
@@ -362,37 +447,7 @@ def l4t_image_pulled(hardware_info_session):
         JETSON_TIMEOUT,
         key_filename=key_path,
     ) as ssh:
-        candidates = [cops.get_l4t_jetpack_image()]
-        selected_tag = cops.get_l4t_jetpack_image().rsplit(":", 1)[-1]
-        host_major = cops._parse_l4t_tuple(selected_tag)[0]
-        for tag in cops.PUBLISHED_L4T_JETPACK_TAGS:
-            image = f"nvcr.io/nvidia/l4t-jetpack:{tag}"
-            if image not in candidates and cops._parse_l4t_tuple(tag)[0] == host_major:
-                candidates.append(image)
-
-        last_err = ""
-        pulled = None
-        for image in candidates:
-            exists = ssh.sudo(f"podman image exists {image}", fail_on_rc=False)
-            if exists.exit_status == 0:
-                logger.info("[Setup] L4T image already present: %s", image)
-                pulled = image
-                break
-            result = ssh.sudo(f"podman pull {image}", timeout=900, fail_on_rc=False)
-            if result.exit_status == 0:
-                logger.info("[Setup] Pulled L4T image: %s", image)
-                pulled = image
-                break
-            last_err = (result.stderr or result.stdout).strip()[:500]
-            logger.warning("[Setup] Could not pull %s: %s", image, last_err)
-
-        if pulled is None:
-            pytest.skip(
-                f"Failed to pull any L4T jetpack image {candidates}: {last_err}"
-            )
-        if pulled != cops.get_l4t_jetpack_image():
-            cops.L4T_JETPACK_IMAGE = pulled
-            logger.info("[Setup] L4T_JETPACK_IMAGE updated to pulled image %s", pulled)
+        ssh.sudo(f"podman pull {L4T_JETPACK_IMAGE}", timeout=900)
     yield
 
 @pytest.fixture(scope="session", autouse=True)
@@ -410,6 +465,29 @@ def beaker_repo_session(hardware_info_session):
         key_filename=key_path,
     ) as ssh:
         _install_beaker_repo(ssh, RHEL_VERSION)
+    yield
+
+@pytest.fixture(scope="session", autouse=True)
+def nvidia_toolkit_session(hardware_info_session):
+    """
+    Ensure NVIDIA container toolkit is set up correctly on RC builds.
+    Depends on hardware_info_session to ensure IS_STAGE_BUILD is available.
+    """
+    if IS_STAGE_BUILD:
+        logger.info("[Setup] Stage build detected — skipping NVIDIA toolkit auto-setup")
+        yield
+        return
+
+    logger.info("[Setup] RC/Production build detected — ensuring NVIDIA container toolkit...")
+    with SSHConnection(
+        JETSON_HOST,
+        JETSON_USERNAME,
+        JETSON_PASSWORD or None,
+        JETSON_PORT,
+        JETSON_TIMEOUT,
+        key_filename=key_path,
+    ) as ssh:
+        _ensure_nvidia_container_toolkit(ssh)
     yield
 
 @pytest.fixture(scope="session", autouse=True)
