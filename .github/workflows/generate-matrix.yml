@@ -7,11 +7,12 @@ on:
     - cron: '30 14 * * 6'  # e2e-bootc — Saturday  14:30 UTC (job runs 12:00)
   # Also regenerate on push to this branch when matrix scripts change
   push:
-    branches: [main, rhel-9.8]
+    branches: [main, rhel-9.8, rhel-9.8-latest]
     paths:
       - "matrix_data/**"
       - "scripts/generate_matrix.py"
       - "scripts/fetch_ci_data.py"
+      - ".github/workflows/generate-matrix.yml"
   # Regenerate after a Beaker CI run completes
   workflow_run:
     workflows: ["Beaker Jetson Testing"]
@@ -36,6 +37,7 @@ permissions:
 
 env:
   GCS_BUCKET: test-platform-results
+  GCS_PUBLIC_BUCKET: test-platform-results-public
   GCS_BASE: gs://test-platform-results/logs
 
 jobs:
@@ -48,7 +50,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          ref: rhel-9.8
+          # Use the branch that triggered the run. Scheduled runs execute from
+          # the default branch, but the latest Jetson matrix is maintained on
+          # rhel-9.8-latest, so keep scheduled dashboard generation current too.
+          ref: ${{ github.event_name == 'schedule' && 'rhel-9.8-latest' || github.event_name == 'workflow_run' && github.event.workflow_run.head_branch || github.ref_name }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -96,12 +101,10 @@ jobs:
         if: steps.job.outputs.fetch == 'true'
         run: |
           JOB="${{ steps.job.outputs.name }}"
-          GCS_JOB_PATH="${{ env.GCS_BASE }}/${JOB}"
-          # Prow artifacts may be private, or the selected job may not have
-          # completed a build yet. Neither condition should prevent the
-          # dashboard from being generated from the checked-in matrix data.
+          GCS_JOB_PATH="gs://${{ env.GCS_PUBLIC_BUCKET }}/logs/${JOB}"
+          # Periodic Jetson artifacts are mirrored in the public bucket.
           if ! LISTING=$(gsutil ls "${GCS_JOB_PATH}/" 2>&1); then
-            echo "::warning::Unable to list Prow builds for ${JOB}; artifacts may be private or unavailable."
+            echo "::warning::Unable to list public Prow builds for ${JOB}; artifacts may be unavailable."
             echo "found=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -179,8 +182,17 @@ jobs:
       #========================================================================
       - name: Fetch CI results from Prow/GCS
         run: |
+          PERIODIC_ARGS=()
+          if [ -n "${{ steps.job.outputs.name }}" ]; then
+            PERIODIC_ARGS+=(
+              --include-periodic
+              --periodic-job "${{ steps.job.outputs.name }}"
+              --periodic-limit 5
+            )
+          fi
           python scripts/fetch_ci_data.py \
-            --output matrix_data/ci_results.json
+            --output matrix_data/ci_results.json \
+            "${PERIODIC_ARGS[@]}"
         continue-on-error: true
 
       - name: Generate dashboard
@@ -216,7 +228,7 @@ jobs:
           | **Job** | \`${JOB}\` |
           | **Build ID** | \`${BUILD_ID}\` |
           | **Result** | **${RESULT}** |
-          | **Prow Link** | [View on Prow](https://prow.ci.openshift.org/view/gs/${{ env.GCS_BUCKET }}/logs/${JOB}/${BUILD_ID}) |
+          | **Prow Link** | [View on Prow](https://prow.ci.openshift.org/view/gs/${{ env.GCS_PUBLIC_BUCKET }}/logs/${JOB}/${BUILD_ID}) |
 
           EOF
           fi
