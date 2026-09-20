@@ -1,10 +1,9 @@
 name: Update Test Matrix Dashboard
 
 on:
-  # Cron: run after each Prow periodic job to give it time to finish
+  # Cron: run after the RHEL 9.8 e2e-full Prow periodic job to give it time to finish
   schedule:
-    - cron: '30 10 * * 1'  # e2e-full  — Monday    10:30 UTC (job runs 08:00)
-    - cron: '30 14 * * 6'  # e2e-bootc — Saturday  14:30 UTC (job runs 12:00)
+    - cron: '30 10 * * 1'  # Monday 10:30 UTC (job runs 08:00)
   # Also regenerate on push to this branch when matrix scripts change
   push:
     branches: [main, rhel-9.8, rhel-9.8-latest]
@@ -12,6 +11,7 @@ on:
       - "matrix_data/**"
       - "scripts/generate_matrix.py"
       - "scripts/fetch_ci_data.py"
+      - "scripts/fetch_device_logs.py"
       - ".github/workflows/generate-matrix.yml"
   # Regenerate after a Beaker CI run completes
   workflow_run:
@@ -19,16 +19,6 @@ on:
     types: [completed]
   # Manual trigger
   workflow_dispatch:
-    inputs:
-      job_name:
-        description: 'Prow periodic job to fetch (leave blank to skip GCS fetch)'
-        required: false
-        default: ''
-        type: choice
-        options:
-          - ''
-          - periodic-ci-rh-ecosystem-edge-qe-rhel-jetson-rhel-9.8-e2e-full
-          - periodic-ci-rh-ecosystem-edge-qe-rhel-jetson-rhel-9.8-e2e-bootc
 
 permissions:
   contents: read
@@ -60,142 +50,44 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y -qq libkrb5-dev krb5-user
-
-      - name: Install Python dependencies
-        run: pip install -r requirements.txt
+      # The dashboard, GCS fetcher, and device-log report use only Python's
+      # standard library. The full hardware-test requirements are not needed
+      # here and make Pages refreshes unnecessarily slow and fragile.
 
       #========================================================================
-      # Step 1: Fetch Prow periodic job results from GCS (cron / manual only)
+      # Step 1: Fetch only the RHEL 9.8 e2e-full Prow periodic job from GCS
       #========================================================================
       - name: Resolve Prow job name
         id: job
         run: |
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            JOB="${{ github.event.inputs.job_name }}"
-          elif [ "${{ github.event_name }}" == "schedule" ]; then
-            DOW=$(date -u +%u)  # 1=Mon 6=Sat
-            case "$DOW" in
-              1) JOB="periodic-ci-rh-ecosystem-edge-qe-rhel-jetson-rhel-9.8-e2e-full" ;;
-              6) JOB="periodic-ci-rh-ecosystem-edge-qe-rhel-jetson-rhel-9.8-e2e-bootc" ;;
-              *) JOB="" ;;
-            esac
-          elif [ "${{ github.ref_name }}" == "rhel-9.8-latest" ]; then
-            # Keep the latest branch dashboard current after parser/workflow changes.
-            JOB="periodic-ci-rh-ecosystem-edge-qe-rhel-jetson-rhel-9.8-e2e-full"
-          else
-            JOB=""
-          fi
+          JOB="periodic-ci-rh-ecosystem-edge-qe-rhel-jetson-rhel-9.8-e2e-full"
           echo "name=$JOB" >> $GITHUB_OUTPUT
-          [ -n "$JOB" ] && echo "fetch=true" >> $GITHUB_OUTPUT || echo "fetch=false" >> $GITHUB_OUTPUT
-          echo "Prow job to fetch: ${JOB:-none}"
-
-      - name: Install gsutil
-        if: steps.job.outputs.fetch == 'true'
-        run: |
-          curl -sSL https://sdk.cloud.google.com | bash -s -- --disable-prompts --install-dir=/opt/google-cloud-sdk
-          echo "/opt/google-cloud-sdk/google-cloud-sdk/bin" >> $GITHUB_PATH
-
-      - name: Find latest Prow build
-        id: build
-        if: steps.job.outputs.fetch == 'true'
-        run: |
-          JOB="${{ steps.job.outputs.name }}"
-          GCS_JOB_PATH="gs://${{ env.GCS_PUBLIC_BUCKET }}/logs/${JOB}"
-          # Periodic Jetson artifacts are mirrored in the public bucket.
-          if ! LISTING=$(gsutil ls "${GCS_JOB_PATH}/" 2>&1); then
-            echo "::warning::Unable to list public Prow builds for ${JOB}; artifacts may be unavailable."
-            echo "found=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          BUILD_ID=$(printf '%s\n' "$LISTING" \
-            | grep -oE '[0-9]{19}' | sort -n | tail -1 || true)
-          if [ -z "$BUILD_ID" ]; then
-            echo "::warning::No completed Prow builds found for ${JOB}; skipping Prow artifact fetch."
-            echo "found=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          echo "found=true" >> "$GITHUB_OUTPUT"
-          echo "id=${BUILD_ID}" >> "$GITHUB_OUTPUT"
-          echo "path=${GCS_JOB_PATH}/${BUILD_ID}" >> "$GITHUB_OUTPUT"
-          echo "Latest build: ${BUILD_ID}"
-
-      - name: Wait for Prow build to finish
-        if: steps.job.outputs.fetch == 'true' && steps.build.outputs.found == 'true'
-        run: |
-          BUILD_PATH="${{ steps.build.outputs.path }}"
-          for i in $(seq 1 30); do
-            if gsutil ls "${BUILD_PATH}/finished.json" &>/dev/null; then
-              echo "Build finished."; break
-            fi
-            echo "  Not finished yet, waiting 60s... ($i/30)"
-            sleep 60
-          done
-          if ! gsutil ls "${BUILD_PATH}/finished.json" &>/dev/null; then
-            echo "Timed out waiting for build to finish"; exit 1
-          fi
-
-      - name: Download Prow artifacts
-        if: steps.job.outputs.fetch == 'true' && steps.build.outputs.found == 'true'
-        run: |
-          BUILD_PATH="${{ steps.build.outputs.path }}"
-          mkdir -p prow-results
-          gsutil cp "${BUILD_PATH}/finished.json" prow-results/
-          TEST_STEP=$(echo "${{ steps.job.outputs.name }}" | grep -oP 'e2e-\w+')
-          JUNIT_PATH="${BUILD_PATH}/artifacts/${TEST_STEP}/qe-rhel-jetson-pytest/artifacts/junit.xml"
-          gsutil cp "${JUNIT_PATH}" prow-results/junit.xml 2>/dev/null || \
-            gsutil cp "${BUILD_PATH}/artifacts/${TEST_STEP}/qe-rhel-jetson-pytest/junit.xml" prow-results/junit.xml 2>/dev/null || \
-            echo "junit.xml not found, skipping"
-          gsutil cp "${BUILD_PATH}/artifacts/${TEST_STEP}/qe-rhel-jetson-pytest/build-log.txt" prow-results/build-log.txt 2>/dev/null || true
-          ls -lh prow-results/
-
-      - name: Parse Prow results
-        id: prow
-        if: steps.job.outputs.fetch == 'true' && steps.build.outputs.found == 'true'
-        run: |
-          PASSED=$(python3 -c "
-          import json
-          with open('prow-results/finished.json') as f:
-              d = json.load(f)
-          print('true' if d.get('passed') else 'false')
-          " 2>/dev/null || echo "false")
-          RESULT=$(python3 -c "
-          import json
-          with open('prow-results/finished.json') as f:
-              d = json.load(f)
-          print(d.get('result', 'unknown'))
-          " 2>/dev/null || echo "unknown")
-          echo "passed=${PASSED}" >> $GITHUB_OUTPUT
-          echo "result=${RESULT}" >> $GITHUB_OUTPUT
-          echo "Prow result: ${RESULT}"
-
-      - name: Upload Prow raw artifacts
-        uses: actions/upload-artifact@v4
-        if: steps.job.outputs.fetch == 'true' && steps.build.outputs.found == 'true'
-        with:
-          name: prow-results-${{ steps.job.outputs.name }}-${{ steps.build.outputs.id }}
-          path: prow-results/
-          retention-days: 30
+          echo "fetch=true" >> $GITHUB_OUTPUT
+          echo "Prow job to fetch: $JOB"
 
       #========================================================================
-      # Step 2: Fetch PR-triggered CI results and generate dashboard
+      # Step 2: Fetch periodic results and generate dashboard
       #========================================================================
       - name: Fetch CI results from Prow/GCS
         run: |
-          PERIODIC_ARGS=()
-          if [ -n "${{ steps.job.outputs.name }}" ]; then
-            PERIODIC_ARGS+=(
-              --include-periodic
-              --periodic-job "${{ steps.job.outputs.name }}"
-              --periodic-limit 5
-            )
-          fi
+          # Never allow a checked-in PR result file to become the dashboard source.
+          rm -f matrix_data/ci_results.json matrix_data/device_logs.json
           python scripts/fetch_ci_data.py \
             --output matrix_data/ci_results.json \
-            "${PERIODIC_ARGS[@]}"
+            --include-periodic \
+            --periodic-only \
+            --periodic-job "${{ steps.job.outputs.name }}" \
+            --periodic-limit 5
+        continue-on-error: true
+
+      - name: Fetch and summarize device logs
+        if: steps.job.outputs.fetch == 'true'
+        run: |
+          python scripts/fetch_device_logs.py \
+            --job "${{ steps.job.outputs.name }}" \
+            --limit 5 \
+            --output-dir docs/ci-logs \
+            --index-output matrix_data/device_logs.json
         continue-on-error: true
 
       - name: Generate dashboard
@@ -203,7 +95,8 @@ jobs:
           python scripts/generate_matrix.py \
             --input matrix_data \
             --output docs/jetson_test_matrix.html \
-            --ci-results matrix_data/ci_results.json
+            --ci-results matrix_data/ci_results.json \
+            --device-log-index matrix_data/device_logs.json
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
@@ -217,26 +110,17 @@ jobs:
         if: always()
         run: |
           FETCH="${{ steps.job.outputs.fetch }}"
-          FOUND="${{ steps.build.outputs.found }}"
-          if [ "$FETCH" == "true" ] && [ "$FOUND" == "true" ]; then
+          if [ "$FETCH" == "true" ]; then
             JOB="${{ steps.job.outputs.name }}"
-            BUILD_ID="${{ steps.build.outputs.id }}"
-            RESULT="${{ steps.prow.outputs.result }}"
-            ICON=$([[ "${{ steps.prow.outputs.passed }}" == "true" ]] && echo "✅" || echo "❌")
             cat >> $GITHUB_STEP_SUMMARY << EOF
-          ## ${ICON} Prow Periodic Job: ${RESULT}
+          ## 📊 Prow periodic data processed
 
           | Field | Value |
           |-------|-------|
           | **Job** | \`${JOB}\` |
-          | **Build ID** | \`${BUILD_ID}\` |
-          | **Result** | **${RESULT}** |
-          | **Prow Link** | [View on Prow](https://prow.ci.openshift.org/view/gs/${{ env.GCS_PUBLIC_BUCKET }}/logs/${JOB}/${BUILD_ID}) |
+          | **Device reports** | Generated under \`docs/ci-logs/\` when archives exist |
 
           EOF
-          fi
-          if [ "$FETCH" == "true" ] && [ "$FOUND" != "true" ]; then
-            echo "⚠️ Prow artifacts were unavailable; dashboard generated from existing matrix data." >> $GITHUB_STEP_SUMMARY
           fi
           echo "## 📊 Matrix dashboard regenerated" >> $GITHUB_STEP_SUMMARY
 
