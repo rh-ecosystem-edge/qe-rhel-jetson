@@ -17,15 +17,13 @@ logger = getLogger(__name__)
 
 FILE = Path(os.path.realpath(__file__)).parent
 
-# Jetson samples image (has sample streams/models). Not the dGPU Triton image:
-# nvcr.io/nvidia/deepstream:7.1-triton-multiarch prints driver 560.28+ UNAVAILABLE
-# on L4T and is the wrong default for this suite.
-DEEPSTREAM_IMAGE = os.getenv(
-    "DEEPSTREAM_IMAGE",
-    "nvcr.io/nvidia/deepstream:7.1-samples-multiarch",
-)
+# DeepStream 9.1 is NVIDIA's JetPack 7.2/L4T 39.2 release for Jetson Orin.
+# The multiarch samples image contains the TensorRT backend, sample streams,
+# models, and the arm64 userspace required by these tests.
+DEFAULT_DEEPSTREAM_IMAGE = "nvcr.io/nvidia/deepstream:9.1-samples-multiarch"
+DEEPSTREAM_IMAGE = os.getenv("DEEPSTREAM_IMAGE", DEFAULT_DEEPSTREAM_IMAGE)
 
-DS_BASE = "/opt/nvidia/deepstream/deepstream"
+DS_BASE = "/opt/nvidia/deepstream/deepstream-9.1"
 DS_SAMPLES = f"{DS_BASE}/samples"
 DS_STREAMS = f"{DS_SAMPLES}/streams"
 DS_CONFIGS = f"{DS_SAMPLES}/configs/deepstream-app"
@@ -37,7 +35,6 @@ REQUIRED_PLUGINS = [
     "nvdsosd",
     "nvvideoconvert",
 ]
-
 
 class TestDeepStream:
     """Test NVIDIA DeepStream SDK on Jetson devices."""
@@ -65,16 +62,15 @@ class TestDeepStream:
         logger.info("DeepStream version output:\n%s", output)
 
     @pytest.mark.critical
-    def test_deepstream_gst_plugins(self, ssh, deepstream_image):
-        """Verify required DeepStream GStreamer plugins are registered."""
-        failed = []
-        for plugin in REQUIRED_PLUGINS:
-            result = run_container(ssh, deepstream_image, f"gst-inspect-1.0 {plugin}")
-            if result.exit_status != 0:
-                failed.append(f"{plugin}: {result.stderr.strip()[:120]}")
-            else:
-                logger.info("Plugin OK: %s", plugin)
-        assert not failed, "Missing DeepStream GStreamer plugins:\n" + "\n".join(failed)
+    @pytest.mark.parametrize("plugin", REQUIRED_PLUGINS)
+    def test_deepstream_gst_plugin(self, ssh, deepstream_image, plugin):
+        """Verify each required DeepStream GStreamer plugin is registered."""
+        result = run_container(ssh, deepstream_image, f"gst-inspect-1.0 {plugin}")
+        assert result.exit_status == 0, (
+            f"Missing DeepStream GStreamer plugin {plugin}: "
+            f"{result.stderr.strip()[:500]}"
+        )
+        logger.info("Plugin OK: %s", plugin)
 
     def test_nvvideoconvert_pipeline(self, ssh, deepstream_image):
         """Run a basic nvvideoconvert pipeline on a synthetic source.
@@ -106,10 +102,9 @@ class TestDeepStream:
         Uses the Primary_Detector (ResNet10) model from DeepStream samples.
         Note: TRT engine compilation on first run can take several minutes.
         """
-        # L4T / JetPack drivers are 540.x; some NGC images still print
-        # "built for NVIDIA Driver Release 560.28+" / UNAVAILABLE. NVIDIA
-        # documents that this is a container-runtime banner and is not a
-        # functional skip on Jetson — continue and let the pipeline decide.
+        # Some multiarch images print a driver-compatibility banner before the
+        # command output. On Jetson, continue and let the pipeline determine
+        # whether the host driver and container userspace are compatible.
         probe = run_container(ssh, deepstream_image, "echo ok")
         probe_out = probe.stdout + probe.stderr
         if "UNAVAILABLE" in probe_out:

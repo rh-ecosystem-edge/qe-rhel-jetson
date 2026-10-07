@@ -17,21 +17,49 @@ from tests_resources.container_ops import (
 
 FILE = Path(os.path.realpath(__file__)).parent
 
+JP72_DLA_LIMITATION = (
+    "The stock JetPack 7.2/7.2.1 SBSA stack (CUDA 13.2, TensorRT 10.16) "
+    "does not provide the DLA userspace compiler/runtime on Jetson Orin; "
+    "libnvdla_compiler.so is absent. DLA requires a future validated "
+    "NVIDIA stack packaged for RHEL."
+)
+
+
+def _require_dla_runtime(ssh):
+    """Skip DLA-only tests when the stock JetPack 7 runtime is unavailable."""
+    result = ssh.run(
+        "ls /usr/lib64/nvidia/libnvdla_compiler.so* 2>/dev/null",
+        fail_on_rc=False,
+    )
+    if result.exit_status != 0 or not result.stdout.strip():
+        pytest.skip(JP72_DLA_LIMITATION)
+
 
 class TestDLA:
     """Test DLA functionality on Jetson devices."""
 
     @pytest.fixture(scope="class")
-    def l4t_tensorrt_image(self, ssh, l4t_image_pulled):
+    def dla_runtime_available(self, ssh):
+        """Gate DLA fixtures without suppressing TensorRT GPU validation."""
+        _require_dla_runtime(ssh)
+
+    @pytest.fixture(scope="class")
+    def l4t_tensorrt_image(self, ssh):
         """Build L4T TensorRT image once per class, clean up after."""
-        tag = f"l4t-tensorrt-tests:{get_l4t_jetpack_image().split(':')[1]}"
+        image = get_l4t_jetpack_image()
+        exists = ssh.sudo(f"podman image exists {image}", fail_on_rc=False)
+        if exists.exit_status != 0:
+            pytest.skip(
+                f"L4T image is not cached: {image}. Automatic NGC pulls are disabled."
+            )
+        tag = f"l4t-tensorrt-tests:{image.split(':')[1]}"
         build_container_image(ssh, FILE / "Dockerfile.l4t_tensorrt", tag, suite_name="dla")
         yield tag
         # Teardown
         cleanup_container_image(ssh, tag)
 
     @pytest.mark.critical
-    def test_dla_OnnxMNIST_sample(self, ssh):
+    def test_dla_OnnxMNIST_sample(self, ssh, dla_runtime_available):
         """Test DLA with sample of ONNX model (OnnxMNIST) in TensorRT container (--useDLACore=0)."""
         spec = _conftest.get_hardware_spec(_conftest.HARDWARE_MODEL_NAME)
         tag = "dla-tensorrt-qe-tests"
@@ -49,7 +77,9 @@ class TestDLA:
           ), f"DLA test failed - expected DlaLayer in output: {result.stderr}"
 
     @pytest.mark.critical
-    def test_l4t_trtexec_dla(self, ssh, l4t_tensorrt_image):
+    def test_l4t_trtexec_dla(
+        self, ssh, dla_runtime_available, l4t_tensorrt_image
+    ):
         """Test TensorRT via trtexec with ResNet50 model on all DLA cores.
         Iterates over all expected amount of DLA cores by jetson_hardware_specs.yaml. (Skips if DLA not supported)"""
         spec = _conftest.get_hardware_spec(_conftest.HARDWARE_MODEL_NAME)

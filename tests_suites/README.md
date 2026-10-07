@@ -59,7 +59,20 @@ Tests can be configured via environment variables:
 L4T container tests can be configured via:
 
 - `L4T_JETPACK_IMAGE`: L4T container image (default: `nvcr.io/nvidia/l4t-jetpack:r36.4.0`)
-- `CUDA_SAMPLES_VERSION`: cuda-samples git tag (default: `v12.9`)
+- `CUDA_SAMPLES_IMAGE`: prebuilt CUDA samples image (default: private JetPack 7 image)
+- `GITLAB_REGISTRY_USER` and `GITLAB_REGISTRY_TOKEN`: credentials for the private CUDA samples image
+
+The CUDA suite does not pull the public NGC L4T image. Set the GitLab
+credentials in the environment before running it:
+
+```bash
+export GITLAB_REGISTRY_USER='your-gitlab-user'
+export GITLAB_REGISTRY_TOKEN='your-gitlab-token'
+JETSON_HOST=nvidia-jetson-agx-orin-06.khw.eng.bos2.dc.redhat.com pytest tests_suites/cuda/ -v
+```
+
+JetPack 7 skips the NGC PyTorch and TensorFlow `igpu` images because they are
+not Jetson L4T 39 images and are not pulled automatically.
 
 ## Running Tests
 
@@ -147,7 +160,8 @@ On RHEL 9, camera kmods (`tegra_camera`, `nvhost_isp`, `nvcsi`, `tegra_vi`, …)
 | Topic | Limitation |
 |-------|------------|
 | L4T JetPack container | NGC has **no `r36.5.x`** (or `r39.x` / JetPack 7). Host L4T 36.5.x uses `nvcr.io/nvidia/l4t-jetpack:r36.4.0` (newer host driver + older container userspace). Published tags: `r36.4.0`, `r36.3.0`, `r36.2.0`, `r35.4.1`, `r35.3.1`, `r35.2.1`, `r35.1.0`. Override with `L4T_JETPACK_IMAGE`. |
-| DeepStream | Default is `nvcr.io/nvidia/deepstream:7.1-samples-multiarch` (Jetson samples). Version, plugins, `nvvideoconvert`, and `nvstreammux` run. Sample **inference** may fail: this image often has neither `nvv4l2decoder` nor `avdec_h264`. The dGPU Triton image (`7.1-triton-multiarch`) prints driver `560.28+ UNAVAILABLE` on L4T; that banner is ignored, not used as a skip. Set `DEEPSTREAM_IMAGE` to a Jetson `deepstream-l4t` tag if you need full inference. |
+| DeepStream | Default is `nvcr.io/nvidia/deepstream:9.1-samples-multiarch`, NVIDIA's JetPack 7.2/L4T 39.2 image for Jetson Orin. The suite validates the version, required plugins, `nvvideoconvert`, `nvstreammux`, and sample inference. Override with `DEEPSTREAM_IMAGE` only when testing another JetPack-compatible release. |
+| DLA on JetPack 7.2 | The stock SBSA stack (CUDA 13.2/TensorRT 10.16) does not ship the Orin DLA userspace compiler/runtime (`libnvdla_compiler.so`). DLA-only tests skip; TensorRT GPU validation remains enabled. Do not install NVIDIA's Debian-only experimental upgrade instructions on RHEL. |
 | L4T image pull | Only CUDA/DLA/PVA/MMAPI fixtures pull `l4t-jetpack`. SC7/RTC/ISP do not. |
 
 ### Hardware / product spec
@@ -158,6 +172,7 @@ On RHEL 9, camera kmods (`tegra_camera`, `nvhost_isp`, `nvcsi`, `tegra_vi`, …)
 | VIC encode tests | `video_enc.supported: false` on that platform. |
 | PCIe speed tests | No `capable_speed` / PCIe spec for that model. |
 | SC7 | No wakealarm RTC, or kernel has no `mem_sleep=deep`. |
+| SC7 on JetPack 7.2.1/L4T 39.2.1 | Repeated resume cycles can fail in `tegra-se-nvrng` with error `-110` and GPU DCE RPC errors. Run SC7 in an isolated job with serial/power recovery; tracked in [#105](https://github.com/rh-ecosystem-edge/qe-rhel-jetson/issues/105). |
 
 ### Session-level (entire pytest run skipped)
 
