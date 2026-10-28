@@ -12,6 +12,13 @@
 # -----------------------------------------------------------------------------
 _target_versions:
 
+  "7.2.1":
+    rhel_version: "10.2"
+    l4t_version: "39.2.1"
+    uefi_firmware_version: "39.2.1"
+    # Match the kernel ABI while allowing the RHEL release/architecture suffix.
+    kernel_version: "6.12.0-211.67.1"
+
   "6.2.3":
     rhel_version: "9.8"
     l4t_version: "36.5.2"

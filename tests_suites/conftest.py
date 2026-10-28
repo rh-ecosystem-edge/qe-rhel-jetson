@@ -431,11 +431,14 @@ def refresh_hardware_info_globals(ssh):
         BOOTC_IMAGE_URL, KERNEL_VERSION,
     )
 
-@pytest.fixture(scope="session", autouse=True)
+@pytest.fixture(scope="session")
 def l4t_image_pulled(hardware_info_session):
-    """Pre-pull L4T JetPack container image once per session.
-    Podman caches the base layer — subsequent podman build FROM this image
-    only downloads the test-specific layers on top."""
+    """Pre-pull L4T JetPack once for suites that use L4T containers.
+
+    This is intentionally on-demand: DeepStream and native host tests do not
+    need the large L4T base image, which matters on devices with small /tmp.
+    Podman caches the base layer for the dependent suite fixtures.
+    """
     from tests_resources.container_ops import L4T_JETPACK_IMAGE, podman_command
     with SSHConnection(
         JETSON_HOST,

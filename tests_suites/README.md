@@ -75,6 +75,7 @@ pytest tests_suites/dla/
 pytest tests_suites/pva/
 pytest tests_suites/multimedia/
 pytest tests_suites/vic/
+pytest --run-extra tests_suites/deepstream/
 ```
 
 Run extra tests, along with basic tests (basic tests runs in Konflux/CI):
@@ -90,6 +91,13 @@ pytest -m extra --run-extra tests_suites/
 Run only critical tests (marked with @pytest.mark.critical):
 ```bash
 pytest -m critical tests_suites/
+```
+
+DeepStream tests are marked extra because the NGC image is large. They use
+synthetic video and do not require a camera or the Jetson ISP:
+
+```bash
+pytest --run-extra tests_suites/deepstream/
 ```
 
 ### Bootc Switch Tests
@@ -157,7 +165,8 @@ On RHEL 9, camera kmods (`tegra_camera`, `nvhost_isp`, `nvcsi`, `tegra_vi`, …)
 | DLA `trtexec --useDLACore` | `dla.supported: false` in `jetson_hardware_specs.yaml` (e.g. Orin Nano). |
 | VIC encode tests | `video_enc.supported: false` on that platform. |
 | PCIe speed tests | No `capable_speed` / PCIe spec for that model. |
-| SC7 | No wakealarm RTC, or kernel has no `mem_sleep=deep`. |
+| SC7 capability checks | `/sys/power/state` has no `mem`, or the kernel has no `mem_sleep=deep`. |
+| SC7 suspend/resume cycle | Destructive suspend/reconnect test; run explicitly with `pytest --run-extra tests_suites/sc7/`. JetPack 7.2.1/L4T 39.2.1 may hit the `tegra_se_nvrng` resume timeout; the test avoids repeating a known-broken cycle and reports it as an expected xfail. |
 
 ### Session-level (entire pytest run skipped)
 
