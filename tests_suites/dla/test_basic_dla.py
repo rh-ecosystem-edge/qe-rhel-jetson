@@ -12,7 +12,7 @@ from pathlib import Path
 from tests_suites import conftest as _conftest
 from tests_resources.container_ops import (
     build_container_image, run_container, cleanup_container_image,
-    L4T_JETPACK_IMAGE,
+    get_l4t_jetpack_image,
 )
 
 FILE = Path(os.path.realpath(__file__)).parent
@@ -22,16 +22,34 @@ class TestDLA:
     """Test DLA functionality on Jetson devices."""
 
     @pytest.fixture(scope="class")
-    def l4t_tensorrt_image(self, ssh):
+    def dla_runtime_available(self, ssh):
+        """Skip TensorRT tests when the host CDI DLA library is absent."""
+        result = ssh.run(
+            "ls /usr/lib64/nvidia/libnvdla_compiler.so* 2>/dev/null",
+            fail_on_rc=False,
+        )
+        if result.exit_status != 0 or not result.stdout.strip():
+            pytest.skip(
+                "The host does not provide /usr/lib64/nvidia/libnvdla_compiler.so. "
+                "TensorRT's plugin cannot load in the container without this "
+                "JetPack DLA runtime library."
+            )
+
+    @pytest.fixture(scope="class")
+    def l4t_tensorrt_image(self, ssh, l4t_image_pulled):
         """Build L4T TensorRT image once per class, clean up after."""
-        tag = f"l4t-tensorrt-tests:{L4T_JETPACK_IMAGE.split(':')[1]}"
+        image = get_l4t_jetpack_image()
+        if not image:
+            pytest.skip("No compatible L4T image is available for TensorRT tests")
+        version = image.split("@", 1)[0].rsplit(":", 1)[-1]
+        tag = f"l4t-tensorrt-tests:{version}"
         build_container_image(ssh, FILE / "Dockerfile.l4t_tensorrt", tag, suite_name="dla")
         yield tag
         # Teardown
         cleanup_container_image(ssh, tag)
 
     @pytest.mark.critical
-    def test_dla_OnnxMNIST_sample(self, ssh):
+    def test_dla_OnnxMNIST_sample(self, ssh, dla_runtime_available):
         """Test DLA with sample of ONNX model (OnnxMNIST) in TensorRT container (--useDLACore=0)."""
         spec = _conftest.get_hardware_spec(_conftest.HARDWARE_MODEL_NAME)
         tag = "dla-tensorrt-qe-tests"
@@ -47,7 +65,7 @@ class TestDLA:
           ), f"DLA test failed - expected DlaLayer in output: {result.stderr}"
 
     @pytest.mark.critical
-    def test_l4t_trtexec_dla(self, ssh, l4t_tensorrt_image):
+    def test_l4t_trtexec_dla(self, ssh, dla_runtime_available, l4t_tensorrt_image):
         """Test TensorRT via trtexec with ResNet50 model on all DLA cores.
         Iterates over all expected amount of DLA cores by jetson_hardware_specs.yaml. (Skips if DLA not supported)"""
         spec = _conftest.get_hardware_spec(_conftest.HARDWARE_MODEL_NAME)
@@ -60,8 +78,8 @@ class TestDLA:
                 f"--useDLACore={core} --allowGPUFallback --fp16")
             assert result.exit_status == 0, f"TensorRT DLA core {core} failed: {result.stderr}"
 
-    def test_l4t_trtexec_gpu(self, ssh, l4t_tensorrt_image):
-        """Test TensorRT via trtexec on GPU only (no DLA). Works on all Jetson hardware."""
+    def test_l4t_trtexec_gpu(self, ssh, dla_runtime_available, l4t_tensorrt_image):
+        """Test TensorRT on GPU when its image and plugin runtime are available."""
         result = run_container(ssh, l4t_tensorrt_image,
             "/usr/src/tensorrt/bin/trtexec --onnx=/usr/src/tensorrt/data/resnet50/ResNet50.onnx --fp16")
         assert result.exit_status == 0, f"TensorRT GPU test failed: {result.stderr}"
