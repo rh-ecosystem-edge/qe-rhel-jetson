@@ -58,8 +58,25 @@ Tests can be configured via environment variables:
 
 L4T container tests can be configured via:
 
-- `L4T_JETPACK_IMAGE`: L4T container image (default: `nvcr.io/nvidia/l4t-jetpack:r36.4.0`)
-- `CUDA_SAMPLES_VERSION`: cuda-samples git tag (default: `v12.9`)
+- `L4T_JETPACK_IMAGE`: compatible L4T container image. The suite selects a
+  published image on the host L4T major when available; set this explicitly
+  for a custom image.
+- `CUDA_TEST_BASE_IMAGE`: base image for CUDA samples only. Defaults to the
+  compatible L4T image when available; otherwise it uses the pinned NVIDIA
+  CUDA 13.2 UBI 10 arm64 image for CUDA-only coverage.
+- `CUDA_SAMPLES_VERSION`: cuda-samples git tag. Defaults to `v12.5` for the
+  CUDA 12.6 L4T image and `v13.2` for the CUDA 13.2 UBI image.
+- `CUDA_ARCHITECTURES`: CMake CUDA architecture for standalone samples
+  (default: `87` for Jetson Orin; set `110` for Jetson Thor).
+
+For a one-off run on a device with different kernel or UEFI firmware versions,
+use `--target-kernel-version` or `--target-uefi-firmware-version`. The session
+summary continues to show the versions detected on the device.
+
+On RHEL 10.2 / L4T 39, no matching NGC `l4t-jetpack` image is available. CUDA
+sample coverage uses the pinned CUDA 13.2 UBI 10 arm64 image; cuDNN sample
+sources are absent from that CUDA-only base. DLA, PVA, and MMAPI container
+tests skip unless `L4T_JETPACK_IMAGE` points to a compatible R39 image.
 
 ## Running Tests
 

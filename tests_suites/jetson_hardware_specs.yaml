@@ -8,7 +8,7 @@
 # -----------------------------------------------------------------------------
 # Target versions per JetPack release (used by sanity tests and session skip logic)
 # Note: jetpack_kmod_version is intentionally absent — kmod >= userspace is validated in sanity/test_version_check.py
-# Note: kernel_version can be overridden at runtime with --target-kernel-version
+# Note: kernel_version and uefi_firmware_version can be overridden for one run.
 # -----------------------------------------------------------------------------
 _target_versions:
 
@@ -23,6 +23,12 @@ _target_versions:
     l4t_version: "39.2.0"
     uefi_firmware_version: "39.2.0"
     kernel_version: "6.12.0-211.20.1"
+
+  "7.2.1":
+    rhel_version: "10.2"
+    l4t_version: "39.2.1"
+    uefi_firmware_version: "39.2.1"
+    kernel_version: "6.12.0-211.72.1"
 
 # -----------------------------------------------------------------------------
 # Shared templates (anchors for merge; not used as match keys)

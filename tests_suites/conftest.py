@@ -150,13 +150,19 @@ def _get_target_versions(jetpack_userspace_version: Optional[str]) -> Optional[D
     targets = specs.get("_target_versions", {})
     return targets.get(str(jetpack_userspace_version)) if jetpack_userspace_version else None
 
-def _verify_target_versions(kernel_version_override: Optional[str] = None) -> list[str]:
+def _verify_target_versions(
+    kernel_version_override: Optional[str] = None,
+    firmware_version_override: Optional[str] = None,
+) -> list[str]:
     """Verify detected versions match targets. Returns list of mismatch messages."""
     target = _get_target_versions(JETPACK_VERSION)
     if target is None:
         return []
-    if kernel_version_override:
+    if kernel_version_override or firmware_version_override:
         target = dict(target)
+    if firmware_version_override:
+        target["uefi_firmware_version"] = firmware_version_override
+    if kernel_version_override:
         target["kernel_version"] = kernel_version_override
     mismatches = []
     checks = [
@@ -283,7 +289,12 @@ def hardware_info_session(request):
         )
 
     # Skip entire session if detected versions don't match targets
-    mismatches = _verify_target_versions(kernel_version_override=request.config.getoption("--target-kernel-version"))
+    mismatches = _verify_target_versions(
+        kernel_version_override=request.config.getoption("--target-kernel-version"),
+        firmware_version_override=request.config.getoption(
+            "--target-uefi-firmware-version"
+        ),
+    )
     if mismatches:
         pytest.skip("Version mismatch — " + "; ".join(mismatches))
 
@@ -344,12 +355,18 @@ def refresh_hardware_info_globals(ssh):
     )
 
 
-@pytest.fixture(scope="session", autouse=True)
+@pytest.fixture(scope="session")
 def l4t_image_pulled(hardware_info_session):
-    """Pre-pull L4T JetPack container image once per session.
-    Podman caches the base layer — subsequent podman build FROM this image
-    only downloads the test-specific layers on top."""
-    from tests_resources.container_ops import L4T_JETPACK_IMAGE
+    """Pull a compatible L4T image only for tests that need L4T containers."""
+    from tests_resources import container_ops
+
+    image = container_ops.get_l4t_jetpack_image()
+    if not image:
+        pytest.skip(
+            "No compatible L4T container image is available for this host. "
+            "Set L4T_JETPACK_IMAGE to a compatible image to run this test."
+        )
+
     with SSHConnection(
         JETSON_HOST,
         JETSON_USERNAME,
@@ -358,7 +375,7 @@ def l4t_image_pulled(hardware_info_session):
         JETSON_TIMEOUT,
         key_filename=key_path,
     ) as ssh:
-        ssh.sudo(f"podman pull {L4T_JETPACK_IMAGE}", timeout=900)
+        ssh.sudo(f"podman pull {image}", timeout=900)
     yield
 
 @pytest.fixture(scope="session", autouse=True)
@@ -541,6 +558,11 @@ def pytest_addoption(parser):
         "--target-kernel-version",
         default=None,
         help="Override kernel_version in _target_versions (default: use value from jetson_hardware_specs.yaml)",
+    )
+    parser.addoption(
+        "--target-uefi-firmware-version",
+        default=None,
+        help="Override uefi_firmware_version in _target_versions for this run",
     )
     parser.addoption(
         "--bootc-switch-image",
