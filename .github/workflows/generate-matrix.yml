@@ -39,9 +39,14 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Python
+        if: runner.environment == 'github-hosted'
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+
+      - name: Verify self-hosted Python
+        if: runner.environment == 'self-hosted'
+        run: python3.11 --version
 
       - name: Prepare optional Red Hat CA bundle
         id: ca
@@ -65,11 +70,11 @@ jobs:
           args=(--output matrix_data/ci_results.json --age-days 90 --max-runs 40)
           if [ -n "$REQUEST_ID" ]; then args+=(--request-id "$REQUEST_ID"); fi
           if [ -n "$CA_BUNDLE" ]; then args+=(--ca-bundle "$CA_BUNDLE"); fi
-          python3 scripts/fetch_ci_data.py "${args[@]}"
+          python3.11 scripts/fetch_ci_data.py "${args[@]}"
 
       - name: Generate dashboard
         run: |
-          python3 scripts/generate_matrix.py \
+          python3.11 scripts/generate_matrix.py \
             --input matrix_data \
             --output docs/jetson_test_matrix.html \
             --ci-results matrix_data/ci_results.json
