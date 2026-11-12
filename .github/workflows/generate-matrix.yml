@@ -1,58 +1,96 @@
-name: Generate Test Matrix Dashboard
+name: Update Jetson Testing Farm Dashboard
 
 on:
+  schedule:
+    - cron: '17 * * * *'
   push:
-    branches: [main]
+    branches: [main, rhel-9.8]
     paths:
       - "matrix_data/**"
       - "scripts/generate_matrix.py"
       - "scripts/fetch_ci_data.py"
+      - ".github/workflows/generate-matrix.yml"
   workflow_run:
-    workflows: ["Beaker Jetson Testing"]
+    workflows: ["Testing Farm Jetson E2E"]
     types: [completed]
   workflow_dispatch:
+    inputs:
+      request_id:
+        description: Optional Testing Farm request UUID to fetch directly
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: read
   pages: write
   id-token: write
 
+env:
+  TESTING_FARM_API_URL: https://api.dev.testing-farm.io/v0.1
+
 jobs:
-  generate:
-    runs-on: ubuntu-latest
+  fetch-and-generate:
+    name: Fetch Testing Farm Logs & Generate Dashboard
+    runs-on: ${{ vars.TESTING_FARM_DASHBOARD_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 30
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Fetch CI results from Prow/GCS
+      - name: Prepare optional Red Hat CA bundle
+        id: ca
+        env:
+          TESTING_FARM_CA_BUNDLE: ${{ secrets.TESTING_FARM_CA_BUNDLE }}
         run: |
-          python scripts/fetch_ci_data.py \
-            --output matrix_data/ci_results.json
-        continue-on-error: true
+          if [ -n "$TESTING_FARM_CA_BUNDLE" ]; then
+            printf '%s' "$TESTING_FARM_CA_BUNDLE" > "$RUNNER_TEMP/testing-farm-ca.pem"
+            chmod 600 "$RUNNER_TEMP/testing-farm-ca.pem"
+            echo "path=$RUNNER_TEMP/testing-farm-ca.pem" >> "$GITHUB_OUTPUT"
+          else
+            echo "path=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Fetch Testing Farm requests and parse pytest logs
+        env:
+          TESTING_FARM_API_TOKEN: ${{ secrets.TESTING_FARM_API_TOKEN }}
+          REQUEST_ID: ${{ inputs.request_id || '' }}
+          CA_BUNDLE: ${{ steps.ca.outputs.path }}
+        run: |
+          args=(--output matrix_data/ci_results.json --age-days 90 --max-runs 40)
+          if [ -n "$REQUEST_ID" ]; then args+=(--request-id "$REQUEST_ID"); fi
+          if [ -n "$CA_BUNDLE" ]; then args+=(--ca-bundle "$CA_BUNDLE"); fi
+          python3 scripts/fetch_ci_data.py "${args[@]}"
 
       - name: Generate dashboard
         run: |
-          python scripts/generate_matrix.py \
+          python3 scripts/generate_matrix.py \
             --input matrix_data \
             --output docs/jetson_test_matrix.html \
             --ci-results matrix_data/ci_results.json
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: docs/
 
-  deploy-pages:
-    needs: generate
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+      - name: Job summary
+        run: |
+          echo "## Testing Farm dashboard updated" >> "$GITHUB_STEP_SUMMARY"
+          echo "The page is built from Testing Farm request artifacts and pytest logs." >> "$GITHUB_STEP_SUMMARY"
+          echo "Requests can take hours to finish in the Beaker queue; scheduled refreshes pick up their artifacts after completion." >> "$GITHUB_STEP_SUMMARY"
