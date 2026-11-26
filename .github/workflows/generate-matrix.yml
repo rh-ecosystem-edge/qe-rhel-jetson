@@ -1,8 +1,6 @@
 name: Update Jetson Testing Farm Dashboard
 
 on:
-  schedule:
-    - cron: '17 * * * *'
   push:
     branches: [main, rhel-9.8]
     paths:
@@ -91,7 +89,7 @@ jobs:
         run: |
           echo "## Testing Farm dashboard updated" >> "$GITHUB_STEP_SUMMARY"
           echo "The page is built from Testing Farm request artifacts and pytest logs." >> "$GITHUB_STEP_SUMMARY"
-          echo "Requests can take hours to finish in the Beaker queue; scheduled refreshes pick up their artifacts after completion." >> "$GITHUB_STEP_SUMMARY"
+          echo "Requests can take hours to finish in the Beaker queue; the dashboard can be refreshed manually when needed." >> "$GITHUB_STEP_SUMMARY"
           echo "GitHub Pages deployment runs only from main; feature-branch runs keep the generated page as a workflow artifact." >> "$GITHUB_STEP_SUMMARY"
 
   deploy-pages:
